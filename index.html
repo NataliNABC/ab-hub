@@ -1,0 +1,1713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Always Beyond Hub</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+    input, textarea, select, button { font-family: inherit; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+
+const AB = { blue:"#1A4FBF", yellow:"#F5C518", yellowLight:"rgba(245,197,24,0.12)" };
+const DK = { bg:"#1A1A2E", mid:"#16213E", card:"#1E2A3A", border:"rgba(255,255,255,0.07)", text:"#fff", muted:"#94A3B8", inp:"#1E2A3A", track:"#1E2A3A" };
+const LT = { bg:"#F1F5F9", mid:"#fff", card:"#F8FAFC", border:"rgba(0,0,0,0.08)", text:"#0F172A", muted:"#64748B", inp:"#F1F5F9", track:"#E2E8F0" };
+
+const USERS0 = [
+  {id:"natali",  name:"Natali Navas",    username:"natali.navas",    password:"Admin2024!",  role:"superadmin", tier:"QA Lead"},
+  {id:"dave",    name:"Dave Smith",      username:"dave.smith",      password:"Agent2024!",  role:"agent",      tier:"L1"},
+  {id:"brandon", name:"Brandon Howarth", username:"brandon.howarth", password:"Agent2024!",  role:"agent",      tier:"L1"},
+  {id:"toni",    name:"Toni Panelo",     username:"toni.panelo",     password:"Agent2024!",  role:"agent",      tier:"L1"},
+  {id:"jan",     name:"Jan Opiana",      username:"jan.opiana",      password:"Agent2024!",  role:"agent",      tier:"L1"},
+  {id:"ryan",    name:"Ryan Butler",     username:"ryan.butler",     password:"Agent2024!",  role:"agent",      tier:"L2"},
+  {id:"jag",     name:"Jag Rai",         username:"jag.rai",         password:"Agent2024!",  role:"agent",      tier:"L2"},
+  {id:"aina",    name:"Aina Manglinong", username:"aina.manglinong", password:"Agent2024!",  role:"agent",      tier:"L3"},
+  {id:"matthew", name:"Matthew Davis",   username:"matthew.davis",   password:"Agent2024!",  role:"agent",      tier:"L1"},
+];
+
+const STATUSES = ["available","busy","in a call","onsite","lunch","afk"];
+const STATUS_COLORS = { available:"#22C55E", busy:"#EF4444", "in a call":"#8B5CF6", onsite:"#F59E0B", lunch:"#F97316", afk:"#94A3B8" };
+const EMAIL_TYPES = ["closing","follow up","scheduled call","investigating","too busy","tomorrow"];
+const COLS = ["Description","Action taken","Root cause"];
+const CSAT_MAP = { Excellent:5, Good:4, Neutral:3, Bad:2, Terrible:1 };
+const CSAT_COLORS = { Excellent:"#22C55E", Good:"#84CC16", Neutral:"#F59E0B", Bad:"#F97316", Terrible:"#EF4444" };
+const FAQ = [
+  {q:"How do I upload a ticket?", a:"Drag and drop a PDF or image onto the upload zone, or click Browse files."},
+  {q:"How do I use a HaloPSA URL?", a:"Open the ticket in HaloPSA, click '...' → Print Ticket. Copy the URL from the address bar. Act fast — links expire!"},
+  {q:"How do email templates work?", a:"After parsing, choose from 6 email types. Each is AI-generated. Always review before sending!"},
+  {q:"What is the resolution template?", a:"Click 'Generate filled resolution template' after parsing to auto-fill the 3-column summary for HaloPSA."},
+  {q:"Why did my URL fail?", a:"HaloPSA links expire quickly. Get a fresh one or upload the PDF directly."},
+  {q:"Is the email AI-generated?", a:"Yes — always read through and tweak. You know your clients better than any AI!"},
+];
+
+const PARSE_SYS = `You are a helpdesk ticket parser. Return ONLY JSON, no markdown:
+{"description":"...","action_taken":"...","root_cause":"...","user_name":"first name or there","issue_summary":"one sentence","users_affected":"number or omit","recommended_emails":"comma-separated 1-3 from: closing,follow up,scheduled call,investigating,too busy,tomorrow"}`;
+
+const emailPrompt = (type, p) => `You are a friendly IT support technician at Always Beyond writing a personal email to ${p.user_name}.
+Ticket: Issue: ${p.description} | Action: ${p.action_taken} | Root cause: ${p.root_cause} | Affected: ${p.users_affected}
+Write a "${type}" email. Reference the actual issue by name. Real person tone.
+- closing: summarize exactly what was done
+- follow up: reference the specific fix, ask if it's working
+- scheduled call: mention the issue, a call is booked
+- investigating: acknowledge the issue, do NOT speculate on cause
+- too busy: warm and empathetic, high volume but NOT forgotten
+- tomorrow: personal, will dig into it first thing tomorrow
+Start with "Hey ${p.user_name}!". NO sign-off or signature.`;
+
+const SB_URL = "https://qfkjyxykgufckkektvha.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFma2p5eHlrZ3VmY2trZWt0dmhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzMjIwMzAsImV4cCI6MjA5MTg5ODAzMH0.KBDtkq6KpU4ZF3TU5Iw4Rf-0yOoHlku6aZd2AzMf4Ow";
+const sbH = { "Content-Type":"application/json", "apikey":SB_KEY, "Authorization":`Bearer ${SB_KEY}` };
+const sb = {
+  async select(table, q="") {
+    try {
+      const orderSuffix = q && !q.includes("order=") ? "&order=id.desc" : "";
+      const url = `${SB_URL}/rest/v1/${table}${q ? "?" + q : ""}${orderSuffix}`;
+      const r = await fetch(url, { headers:{ "apikey":SB_KEY, "Authorization":`Bearer ${SB_KEY}` } });
+      if (!r.ok) return [];
+      const data = await r.json();
+      return Array.isArray(data) ? data : [];
+    } catch(e) { return []; }
+  },
+  async insert(table, data) {
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/${table}`, { method:"POST", headers:{...sbH,"Prefer":"return=representation"}, body:JSON.stringify(data) });
+      if (!r.ok) { const t=await r.text(); console.error("sb.insert",table,r.status,t); return null; }
+      return await r.json();
+    } catch(e) { console.error("sb.insert",e); return null; }
+  },
+  async update(table, match, data) {
+    try {
+      const q = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join("&");
+      const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`, { method:"PATCH", headers:{...sbH,"Prefer":"return=representation"}, body:JSON.stringify(data) });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch(e) { return null; }
+  },
+  async upsert(table, data, onConflict) {
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/${table}?on_conflict=${onConflict}`, { method:"POST", headers:{...sbH,"Prefer":"resolution=merge-duplicates,return=representation"}, body:JSON.stringify(data) });
+      if (!r.ok) return null;
+      return await r.json();
+    } catch(e) { return null; }
+  },
+  async del(table, match) {
+    try {
+      const q = Object.entries(match).map(([k,v])=>`${k}=eq.${v}`).join("&");
+      await fetch(`${SB_URL}/rest/v1/${table}?${q}`, { method:"DELETE", headers:sbH });
+    } catch(e) {}
+  },
+};
+
+const scoreColor = s => s >= 85 ? "#22C55E" : s >= 70 ? "#F59E0B" : "#EF4444";
+const scoreLabel = s => s >= 85 ? "Pass" : s >= 70 ? "Needs Work" : "Fail";
+const fmtDate = d => { try { return new Date(d).toLocaleDateString("en-CA",{month:"short",day:"numeric",year:"numeric"}); } catch(e) { return ""; } };
+const fmtTime = d => { try { return new Date(d).toLocaleString("en-CA",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}); } catch(e) { return ""; } };
+const durSince = since => { const s=Math.floor((Date.now()-new Date(since))/1000); if(s<60)return`${s}s`; if(s<3600)return`${Math.floor(s/60)}m`; return`${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m`; };
+const todayKey = () => new Date().toISOString().slice(0,10);
+
+async function callClaude(messages, system, max_tokens=1500) {
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens, system, messages })
+  });
+  const d = await r.json();
+  return d.content?.find(b=>b.type==="text")?.text || "";
+}
+
+function PieChart({ pass, fail, needsWork, size=90 }) {
+  const total = pass + fail + needsWork || 1;
+  const data = [{ v:pass, c:"#22C55E" }, { v:needsWork, c:"#F59E0B" }, { v:fail, c:"#EF4444" }];
+  let cum = 0;
+  const slices = data.map(d => { const s=cum; cum+=d.v/total*360; return {...d,start:s,end:cum}; });
+  const r = size*0.42, cr = size*0.25, cx = size/2, cy = size/2;
+  const pt = (deg,rad) => { const a=(deg-90)*Math.PI/180; return { x:cx+rad*Math.cos(a), y:cy+rad*Math.sin(a) }; };
+  const arc = (s,e,rad) => {
+    if(e-s>=360) return `M ${cx} ${cy-rad} A ${rad} ${rad} 0 1 1 ${cx-0.01} ${cy-rad} Z`;
+    const sp=pt(s,rad), ep=pt(e,rad), lg=e-s>180?1:0;
+    return `M ${cx} ${cy} L ${sp.x} ${sp.y} A ${rad} ${rad} 0 ${lg} 1 ${ep.x} ${ep.y} Z`;
+  };
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {slices.filter(s=>s.v>0).map((s,i) => <path key={i} d={arc(s.start,s.end,r)} fill={s.c} opacity="0.9"/>)}
+      <circle cx={cx} cy={cy} r={cr} fill="#16213E"/>
+      <text x={cx} y={cy-3} textAnchor="middle" dominantBaseline="middle" fontSize={size*0.16} fontWeight="700" fill="#fff">{total}</text>
+      <text x={cx} y={cy+size*0.13} textAnchor="middle" dominantBaseline="middle" fontSize={size*0.09} fill="#94A3B8">total</text>
+    </svg>
+  );
+}
+
+function CsatPie({ records, size=90 }) {
+  const counts = {};
+  records.forEach(r => { counts[r.satisfaction] = (counts[r.satisfaction]||0)+1; });
+  const data = Object.entries(counts).map(([k,v]) => ({ label:k, v, c:CSAT_COLORS[k]||"#888" }));
+  const total = records.length || 1;
+  let cum = 0;
+  const slices = data.map(d => { const s=cum; cum+=d.v/total*360; return {...d,start:s,end:cum}; });
+  const rad = size*0.42, cr = size*0.25, cx = size/2, cy = size/2;
+  const pt = (deg,r) => { const a=(deg-90)*Math.PI/180; return { x:cx+r*Math.cos(a), y:cy+r*Math.sin(a) }; };
+  const arc = (s,e,r) => {
+    if(e-s>=360) return `M ${cx} ${cy-r} A ${r} ${r} 0 1 1 ${cx-0.01} ${cy-r} Z`;
+    const sp=pt(s,r),ep=pt(e,r),lg=e-s>180?1:0;
+    return `M ${cx} ${cy} L ${sp.x} ${sp.y} A ${r} ${r} 0 ${lg} 1 ${ep.x} ${ep.y} Z`;
+  };
+  const avg = (records.reduce((s,r)=>s+(CSAT_MAP[r.satisfaction]||3),0)/Math.max(records.length,1)).toFixed(1);
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {slices.map((s,i) => <path key={i} d={arc(s.start,s.end,rad)} fill={s.c} opacity="0.9"/>)}
+      <circle cx={cx} cy={cy} r={cr} fill="#16213E"/>
+      <text x={cx} y={cy-3} textAnchor="middle" dominantBaseline="middle" fontSize={size*0.18} fontWeight="700" fill="#fff">{avg}</text>
+      <text x={cx} y={cy+size*0.13} textAnchor="middle" dominantBaseline="middle" fontSize={size*0.09} fill="#94A3B8">avg</text>
+    </svg>
+  );
+}
+
+function StatusBadge({ uid, userName }) {
+  const [status, setStatus] = useState("available");
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!uid) return;
+    sb.select("availability", `user_id=eq.${uid}&limit=1`).then(r => {
+      if (r && r.length > 0) setStatus(r[0].status || "available");
+    });
+  }, [uid]);
+
+  const pick = async s => {
+    setStatus(s); setOpen(false);
+    await sb.upsert("availability", { user_id:uid, user_name:userName, status:s, since:new Date().toISOString() }, "user_id");
+  };
+
+  return (
+    <div style={{position:"relative"}}>
+      <button onClick={() => setOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",background:"rgba(255,255,255,0.1)",border:"1.5px solid rgba(255,255,255,0.25)",borderRadius:14,cursor:"pointer"}}>
+        <div style={{width:7,height:7,borderRadius:"50%",background:STATUS_COLORS[status]||"#888"}}/>
+        <span style={{fontSize:11,color:"#fff",textTransform:"capitalize"}}>{status}</span>
+        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {open && (
+        <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,background:DK.mid,border:`1px solid ${DK.border}`,borderRadius:10,overflow:"hidden",zIndex:200,minWidth:130,boxShadow:"0 4px 16px rgba(0,0,0,0.3)"}}>
+          {STATUSES.map(s => (
+            <button key={s} onClick={() => pick(s)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"8px 12px",border:"none",background:status===s?"rgba(26,79,191,0.2)":"transparent",cursor:"pointer",fontSize:12,color:"#fff",textTransform:"capitalize",textAlign:"left"}}>
+              <div style={{width:7,height:7,borderRadius:"50%",background:STATUS_COLORS[s]}}/>{s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function App() {
+  const [dark, setDark] = useState(true);
+  const [user, setUser] = useState(null);
+  const [users, setUsers] = useState(USERS0);
+  const [tab, setTab] = useState("dashboard");
+  const [loginU, setLoginU] = useState("");
+  const [loginP, setLoginP] = useState("");
+  const [loginErr, setLoginErr] = useState("");
+  const [inboxMsg, setInboxMsg] = useState(null);
+  const [pollTick, setPollTick] = useState(0);
+  const T = dark ? DK : LT;
+
+  useEffect(() => {
+    if (!user) return;
+    const iv = setInterval(() => setPollTick(t=>t+1), 15000);
+    return () => clearInterval(iv);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const uid = user.id;
+    sb.select("messages", `to_user_id=eq.${uid}&is_read=eq.false&order=id.asc&limit=1`).then(msgs => {
+      if (msgs && msgs.length > 0) setInboxMsg(msgs[0]);
+    });
+  }, [user, pollTick]);
+
+  const dismissMsg = async () => {
+    if (!inboxMsg) return;
+    await sb.update("messages", { id:inboxMsg.id }, { is_read:true });
+    setInboxMsg(null);
+  };
+
+  const login = () => {
+    const uname = loginU.trim();
+    const pw = loginP;
+    // Check current users state first (respects password changes), fallback to USERS0
+    const found = users.find(u => u.username === uname && u.password === pw)
+                  || USERS0.find(u => u.username === uname && u.password === pw);
+    if (found) {
+      setUser(found); setTab("dashboard"); setLoginErr("");
+      sb.upsert("availability", { user_id:found.id, user_name:found.name, status:"available", since:new Date().toISOString() }, "user_id");
+      sb.insert("activity_log", { user_id:found.id, user_name:found.name, action:"Logged in", created_at:new Date().toISOString() });
+    } else {
+      setLoginErr("Invalid username or password.");
+    }
+  };
+
+  const logout = async () => {
+    if (user) {
+      await sb.upsert("availability", { user_id:user.id, user_name:user.name, status:"afk", since:new Date().toISOString() }, "user_id");
+      await sb.insert("activity_log", { user_id:user.id, user_name:user.name, action:"Logged out", created_at:new Date().toISOString() });
+    }
+    setUser(null); setInboxMsg(null);
+  };
+
+  if (!user) return (
+    <div style={{background:T.bg,minHeight:"100vh",fontFamily:"'Segoe UI',sans-serif",display:"flex",flexDirection:"column"}}>
+      <div style={{background:AB.yellow,padding:"7px 22px",fontSize:12,fontWeight:600,color:"#1a1a1a"}}>Internal Tool · Always Beyond</div>
+      <div style={{background:AB.blue,padding:"12px 22px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <svg width="24" height="24" viewBox="0 0 40 40" fill="none"><ellipse cx="20" cy="20" rx="18" ry="11" stroke="white" strokeWidth="2.2" fill="none"/><ellipse cx="20" cy="20" rx="8" ry="8" stroke="white" strokeWidth="2.2" fill="none"/></svg>
+          <span style={{fontSize:14,fontWeight:700,color:"#fff"}}>Always Beyond Hub</span>
+        </div>
+        <button onClick={()=>setDark(d=>!d)} style={{width:28,height:28,borderRadius:"50%",border:"1.5px solid rgba(255,255,255,0.3)",background:"rgba(255,255,255,0.1)",cursor:"pointer",color:"#fff",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>{dark?"☀":"🌙"}</button>
+      </div>
+      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+        <div style={{width:"100%",maxWidth:340}}>
+          <div style={{textAlign:"center",marginBottom:24}}>
+            <div style={{width:52,height:52,borderRadius:14,background:AB.blue,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px"}}>
+              <svg width="26" height="26" viewBox="0 0 40 40" fill="none"><ellipse cx="20" cy="20" rx="18" ry="11" stroke="white" strokeWidth="2.5" fill="none"/><ellipse cx="20" cy="20" rx="8" ry="8" stroke="white" strokeWidth="2.5" fill="none"/></svg>
+            </div>
+            <div style={{fontSize:19,fontWeight:700,color:T.text,marginBottom:4}}>Welcome back</div>
+            <div style={{fontSize:13,color:T.muted}}>Sign in to Always Beyond Hub</div>
+          </div>
+          <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,padding:22}}>
+            <div style={{marginBottom:13}}>
+              <div style={{fontSize:11,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Username</div>
+              <input value={loginU} onChange={e=>setLoginU(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} placeholder="e.g. jan.opiana" style={{width:"100%",background:T.inp,border:`1px solid ${T.border}`,color:T.text,borderRadius:7,padding:"9px 12px",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Password</div>
+              <input type="password" value={loginP} onChange={e=>setLoginP(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} placeholder="••••••••" style={{width:"100%",background:T.inp,border:`1px solid ${T.border}`,color:T.text,borderRadius:7,padding:"9px 12px",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            {loginErr && <div style={{marginBottom:11,padding:"8px 11px",background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",borderRadius:7,fontSize:12,color:"#FCA5A5"}}>{loginErr}</div>}
+            <button onClick={login} style={{width:"100%",padding:10,background:AB.blue,color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:14}}>Sign in</button>
+            <div style={{marginTop:11,fontSize:11,color:T.muted,textAlign:"center"}}>Default: Agent2024! · Contact admin to change</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const isAdmin = user.role === "admin" || user.role === "superadmin";
+  const uid = user.id;
+
+  return (
+    <div style={{background:T.bg,minHeight:"100vh",fontFamily:"'Segoe UI',sans-serif",color:T.text,paddingBottom:60}}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}@keyframes popIn{from{opacity:0;transform:scale(0.93) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}`}</style>
+
+      {inboxMsg && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{background:DK.mid,border:`2px solid ${inboxMsg.urgency==="urgent"?"#EF4444":AB.blue}`,borderRadius:16,padding:28,maxWidth:400,width:"90%",animation:"popIn 0.2s ease"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+              <div style={{width:36,height:36,borderRadius:"50%",background:inboxMsg.urgency==="urgent"?"#EF4444":AB.blue,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{inboxMsg.urgency==="urgent"?"🚨":"💬"}</div>
+              <div>
+                <div style={{fontSize:14,fontWeight:700,color:"#fff"}}>Message from {inboxMsg.from_name}</div>
+                <div style={{fontSize:11,color:"#94A3B8"}}>{inboxMsg.urgency==="urgent"?"URGENT":"Normal"} · {fmtTime(inboxMsg.created_at)}</div>
+              </div>
+            </div>
+            <div style={{fontSize:14,color:"#fff",lineHeight:1.7,background:"rgba(255,255,255,0.05)",borderRadius:10,padding:"12px 16px",marginBottom:18}}>{inboxMsg.message}</div>
+            <button onClick={dismissMsg} style={{width:"100%",padding:11,background:AB.blue,color:"#fff",border:"none",borderRadius:9,cursor:"pointer",fontWeight:700,fontSize:14}}>Dismiss</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{background:AB.yellow,padding:"7px 22px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{fontSize:12,fontWeight:600,color:"#1a1a1a"}}>Internal Tool · Always Beyond</div>
+        <div style={{fontSize:12,color:"#1a1a1a",fontWeight:500}}>support@alwaysbeyond.com · +1 (403) 768-3173</div>
+      </div>
+
+      <div style={{background:AB.blue,padding:"10px 22px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:9}}>
+          <svg width="24" height="24" viewBox="0 0 40 40" fill="none"><ellipse cx="20" cy="20" rx="18" ry="11" stroke="white" strokeWidth="2.2" fill="none"/><ellipse cx="20" cy="20" rx="8" ry="8" stroke="white" strokeWidth="2.2" fill="none"/></svg>
+          <span style={{fontSize:14,fontWeight:700,color:"#fff"}}>Always Beyond</span>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Hub</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:3,flexWrap:"wrap"}}>
+          {[["dashboard","📊 Dashboard"],["parser","🎫 Parser"],isAdmin&&["admin","⚙️ Admin"]].filter(Boolean).map(([v,l]) => (
+            <button key={v} onClick={()=>setTab(v)} style={{padding:"6px 12px",border:"none",borderRadius:16,cursor:"pointer",fontSize:12,fontWeight:tab===v?600:400,background:tab===v?"rgba(255,255,255,0.2)":"transparent",color:tab===v?"#fff":"rgba(255,255,255,0.65)",transition:"all 0.15s"}}>{l}</button>
+          ))}
+          <div style={{width:1,height:16,background:"rgba(255,255,255,0.2)",margin:"0 3px"}}/>
+          <button onClick={()=>setDark(d=>!d)} style={{width:28,height:28,borderRadius:"50%",border:"1.5px solid rgba(255,255,255,0.3)",background:"rgba(255,255,255,0.1)",cursor:"pointer",color:"#fff",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>{dark?"☀":"🌙"}</button>
+          <StatusBadge uid={uid} userName={user.name}/>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginLeft:3,padding:"3px 10px",background:"rgba(255,255,255,0.12)",borderRadius:16}}>
+            <div style={{width:20,height:20,borderRadius:"50%",background:AB.yellow,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:"#1a1a1a"}}>{user.name.charAt(0)}</div>
+            <span style={{fontSize:12,color:"#fff",fontWeight:500}}>{user.name.split(" ")[0]}</span>
+            <span style={{fontSize:10,color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>{user.role}</span>
+            <button onClick={logout} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:10,padding:0,marginLeft:4}}>Sign out</button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{maxWidth:900,margin:"0 auto",padding:"24px 18px"}}>
+        {tab==="dashboard" && <Dashboard T={T} dark={dark} user={user} uid={uid} AB={AB} isAdmin={isAdmin} users={users}/>}
+        {tab==="parser"    && <Parser T={T} dark={dark} user={user} uid={uid} AB={AB}/>}
+        {tab==="admin" && isAdmin && <AdminPanel T={T} dark={dark} user={user} uid={uid} users={users} setUsers={setUsers} AB={AB}/>}
+      </div>
+
+      <FloatingHelp T={T} dark={dark} AB={AB}/>
+    </div>
+  );
+}
+
+function Dashboard({ T, dark, user, uid, AB, isAdmin, users }) {
+  const [qa, setQa] = useState([]);
+  const [csat, setCsat] = useState([]);
+  const [allQa, setAllQa] = useState([]);
+  const [allCsat, setAllCsat] = useState([]);
+  const [avail, setAvail] = useState([]);
+  const [ann, setAnn] = useState([]);
+  const [checks, setChecks] = useState([]);
+  const [adminTasks, setAdminTasks] = useState([]);
+  const [eodChecks, setEodChecks] = useState({});
+  const [newCheck, setNewCheck] = useState("");
+  const [newDue, setNewDue] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [qaOpen, setQaOpen] = useState(false);
+  const [disputeId, setDisputeId] = useState(null);
+  const [disputeReason, setDisputeReason] = useState("");
+  const [disputeMsg, setDisputeMsg] = useState("");
+  const [disputes, setDisputes] = useState([]);
+  const tk = todayKey();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 30);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      // Fetch this user's own data
+      const [q, c, a, ch, tasks, disp] = await Promise.all([
+        sb.select("qa_records", `agent_id=eq.${uid}&order=created_at.desc`),
+        sb.select("csat_records", `technician_id=eq.${uid}&order=id.desc`),
+        sb.select("announcements", "order=id.desc&limit=5"),
+        sb.select("checklists", `user_id=eq.${uid}&order=id.asc`),
+        sb.select("tasks", "order=id.asc"),
+        sb.select("disputes", `agent_id=eq.${uid}&order=id.desc`),
+      ]);
+      // Also fetch by stored name (fallback for records uploaded before ID matching was added)
+      const [qByName, cByName] = await Promise.all([
+        sb.select("qa_records", `agent_name=eq.${user.name}&order=created_at.desc`),
+        sb.select("csat_records", `technician=eq.${user.name}&order=id.desc`),
+      ]);
+      const mergeById = (a, b) => {
+        const seen = new Set((a||[]).filter(r=>r.id).map(r=>r.id));
+        return [...(a||[]), ...(b||[]).filter(r=>r.id && !seen.has(r.id))];
+      };
+      setQa(mergeById(q, qByName));
+      setCsat(mergeById(c, cByName));
+      setAnn(a||[]);
+      setChecks(ch||[]);
+      setAdminTasks((tasks||[]).filter(t => t.assigned_to === "all" || t.assigned_to === uid));
+      setDisputes(disp||[]);
+      // Admin: fetch ALL records for team overview
+      if (isAdmin) {
+        const [aq, ac, av] = await Promise.all([
+          sb.select("qa_records", "order=created_at.desc&limit=500"),
+          sb.select("csat_records", "order=id.desc&limit=1000"),
+          sb.select("availability", "order=user_id.asc"),
+        ]);
+        setAllQa(aq||[]);
+        setAllCsat(ac||[]);
+        setAvail(av||[]);
+      }
+      try { const s=localStorage.getItem(`eod_${uid}_${tk}`); if(s) setEodChecks(JSON.parse(s)); } catch(e) {}
+      setLoading(false);
+    })();
+  }, [uid]);
+
+  const visibleQA = qa.filter(r => new Date(r.created_at) > cutoff);
+  const mine = qa;
+  const hasDisputed = id => disputes.some(d => d.qa_record_id === String(id));
+
+  const submitDispute = async (record) => {
+    if (!disputeReason.trim()) return;
+    await sb.insert("disputes", {
+      qa_record_id: String(record.id), agent_id: uid, agent_name: user.name,
+      ticket_number: record.ticket_number, score: record.score,
+      reason: disputeReason.trim(), status: "open", created_at: new Date().toISOString(),
+    });
+    setDisputes(p=>[...p, { qa_record_id:String(record.id), status:"open" }]);
+    setDisputeId(null); setDisputeReason("");
+    setDisputeMsg("Dispute submitted successfully.");
+    setTimeout(() => setDisputeMsg(""), 3000);
+  };
+
+  const periodKey = task => {
+    if (task.recurrence==="daily") return tk;
+    if (task.recurrence==="weekly") { const d=new Date(); d.setDate(d.getDate()-d.getDay()+1); return `week_${d.toISOString().slice(0,10)}`; }
+    if (task.recurrence==="monthly") return `month_${tk.slice(0,7)}`;
+    return `once_${task.id}`;
+  };
+  const isTaskActive = task => {
+    const day=new Date().getDay(), date=new Date().getDate();
+    if (task.recurrence==="weekly") return day===1;
+    if (task.recurrence==="monthly") return date===1;
+    return true;
+  };
+  const toggleEod = async key => {
+    const updated = {...eodChecks,[key]:!eodChecks[key]};
+    setEodChecks(updated);
+    try { localStorage.setItem(`eod_${uid}_${tk}`, JSON.stringify(updated)); } catch(e) {}
+  };
+  const isOverdue = due => { if (!due) return false; return new Date(`${tk}T${due}`) < new Date(); };
+  const addCheck = async () => {
+    if (!newCheck.trim()) return;
+    const res = await sb.insert("checklists", { user_id:uid, item_text:newCheck.trim(), is_done:false, due_time:newDue||null, created_at:new Date().toISOString() });
+    if (res && res[0]) setChecks(p=>[...p,res[0]]);
+    setNewCheck(""); setNewDue("");
+  };
+  const toggleCheck = async (id, done) => {
+    await sb.update("checklists", {id}, {is_done:!done});
+    setChecks(p=>p.map(c=>c.id===id?{...c,is_done:!done}:c));
+  };
+  const deleteCheck = async id => {
+    await sb.del("checklists", {id});
+    setChecks(p=>p.filter(c=>c.id!==id));
+  };
+
+  const pass = mine.filter(r=>r.score>=85).length;
+  const needsWork = mine.filter(r=>r.score>=70&&r.score<85).length;
+  const fail = mine.filter(r=>r.score<70).length;
+  const avg = mine.length ? Math.round(mine.reduce((s,r)=>s+r.score,0)/mine.length) : null;
+  const activeTasks = adminTasks.filter(isTaskActive);
+  const teamDone = activeTasks.filter(t=>eodChecks[`t_${t.id}_${periodKey(t)}`]).length;
+  const inp = { background:T.inp, border:`1px solid ${T.border}`, color:T.text, borderRadius:7, padding:"8px 11px", fontSize:13, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
+
+  if (loading) return <div style={{textAlign:"center",padding:"48px",color:T.muted}}>Loading dashboard...</div>;
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14,animation:"fadeUp 0.3s ease"}}>
+      {disputeId && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{background:DK.mid,border:`1px solid ${DK.border}`,borderRadius:14,padding:24,maxWidth:400,width:"90%",animation:"popIn 0.2s ease"}}>
+            <div style={{fontSize:14,fontWeight:700,color:"#fff",marginBottom:4}}>Dispute Ticket #{disputeId.ticket_number}</div>
+            <div style={{fontSize:12,color:"#94A3B8",marginBottom:16}}>Score: <span style={{fontWeight:700,color:scoreColor(disputeId.score)}}>{disputeId.score}/100</span></div>
+            <div style={{fontSize:11,fontWeight:600,color:"#94A3B8",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Reason for dispute</div>
+            <textarea value={disputeReason} onChange={e=>setDisputeReason(e.target.value)} rows={4} placeholder="Explain why you believe this score should be reviewed..." style={{width:"100%",background:DK.card,border:`1px solid ${DK.border}`,color:"#fff",borderRadius:8,padding:"10px 12px",fontSize:13,fontFamily:"inherit",resize:"vertical",outline:"none",boxSizing:"border-box",lineHeight:1.65,marginBottom:14}}/>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>submitDispute(disputeId)} style={{flex:1,padding:"9px",background:AB.blue,color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>Submit Dispute</button>
+              <button onClick={()=>{setDisputeId(null);setDisputeReason("");}} style={{flex:1,padding:"9px",background:"transparent",color:"#94A3B8",border:`1px solid ${DK.border}`,borderRadius:8,cursor:"pointer",fontSize:13}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <div style={{width:44,height:44,borderRadius:12,background:AB.blue,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:700,color:"#fff"}}>{user.name.charAt(0)}</div>
+        <div>
+          <div style={{fontSize:18,fontWeight:700}}>Hey, {user.name.split(" ")[0]}!</div>
+          <div style={{fontSize:12,color:T.muted}}>{user.tier} · {user.role}</div>
+        </div>
+      </div>
+
+      {ann.length > 0 && (
+        <div style={{background:"rgba(26,79,191,0.08)",border:"1px solid rgba(26,79,191,0.2)",borderRadius:11,padding:"12px 16px"}}>
+          <div style={{fontSize:11,fontWeight:600,color:AB.blue,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Announcements</div>
+          {ann.map((a,i) => (
+            <div key={a.id||i} style={{marginBottom:i<ann.length-1?8:0}}>
+              <div style={{fontSize:13,color:T.text,lineHeight:1.6}}>{a.text}</div>
+              <div style={{fontSize:11,color:T.muted,marginTop:2}}>— {a.author} · {fmtDate(a.date_posted||a.created_at)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isAdmin && users && (
+        <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+          <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,fontSize:13,fontWeight:600,color:T.text,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <span>Team Overview</span>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:11,color:T.muted,fontWeight:400}}>{allQa.length} QA · {allCsat.length} CSAT loaded</span>
+              <button onClick={async()=>{
+                const [aq,ac,av]=await Promise.all([
+                  sb.select("qa_records","order=created_at.desc&limit=500"),
+                  sb.select("csat_records","order=id.desc&limit=1000"),
+                  sb.select("availability","order=user_id.asc"),
+                ]);
+                setAllQa(aq||[]); setAllCsat(ac||[]); setAvail(av||[]);
+              }} style={{padding:"3px 9px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,cursor:"pointer",fontSize:10,color:T.muted,fontWeight:500}}>↻ Refresh</button>
+            </div>
+          </div>
+          {users.filter(u=>u.role==="agent").map((agent, i, arr) => {
+            // Match by id OR by name (handles cases where agent_id was stored differently)
+            const agentQA = allQa.filter(r =>
+              r.agent_id === agent.id ||
+              (r.agent_name||"").toLowerCase() === agent.name.toLowerCase()
+            );
+            const agentCsat = allCsat.filter(r =>
+              r.technician_id === agent.id ||
+              (r.technician||"").toLowerCase().split(" ").some(p => agent.name.toLowerCase().includes(p) && p.length > 2)
+            );
+            const qaAvg = agentQA.length ? Math.round(agentQA.reduce((s,r)=>s+r.score,0)/agentQA.length) : null;
+            const csatAvgVal = agentCsat.length ? (agentCsat.reduce((s,r)=>s+(CSAT_MAP[r.satisfaction]||3),0)/agentCsat.length).toFixed(1) : null;
+            const status = avail.find(a=>a.user_id===agent.id);
+            const statusName = status?.status || "offline";
+            return (
+              <div key={agent.id} style={{padding:"12px 16px",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none",display:"flex",alignItems:"center",gap:12}}>
+                <div style={{width:34,height:34,borderRadius:"50%",background:AB.blue,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:"#fff",flexShrink:0}}>{agent.name.charAt(0)}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4,flexWrap:"wrap"}}>
+                    <span style={{fontSize:13,fontWeight:600,color:T.text}}>{agent.name}</span>
+                    <span style={{fontSize:10,color:T.muted}}>{agent.tier}</span>
+                    <div style={{display:"flex",alignItems:"center",gap:4,padding:"2px 7px",background:`${STATUS_COLORS[statusName]||"#88888818"}`,borderRadius:10}}>
+                      <div style={{width:5,height:5,borderRadius:"50%",background:STATUS_COLORS[statusName]||"#888"}}/>
+                      <span style={{fontSize:10,color:STATUS_COLORS[statusName]||"#888",textTransform:"capitalize"}}>{statusName}</span>
+                    </div>
+                    {status && <span style={{fontSize:10,color:T.muted}}>{durSince(status.since)}</span>}
+                  </div>
+                  <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:5}}>
+                      <span style={{fontSize:10,color:T.muted,textTransform:"uppercase",letterSpacing:"0.05em"}}>QA</span>
+                      {qaAvg !== null
+                        ? <>
+                            <span style={{fontSize:12,fontWeight:700,color:scoreColor(qaAvg)}}>{qaAvg}/100</span>
+                            <span style={{fontSize:10,padding:"1px 6px",borderRadius:8,background:`${scoreColor(qaAvg)}18`,color:scoreColor(qaAvg)}}>{scoreLabel(qaAvg)}</span>
+                            <span style={{fontSize:10,color:T.muted}}>({agentQA.length} audits)</span>
+                          </>
+                        : <span style={{fontSize:11,color:T.muted}}>No audits yet</span>
+                      }
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:5}}>
+                      <span style={{fontSize:10,color:T.muted,textTransform:"uppercase",letterSpacing:"0.05em"}}>CSAT</span>
+                      {csatAvgVal !== null
+                        ? <>
+                            <span style={{fontSize:12,fontWeight:700,color:Number(csatAvgVal)>=4?"#22C55E":Number(csatAvgVal)>=3?"#F59E0B":"#EF4444"}}>{csatAvgVal}/5</span>
+                            <span style={{fontSize:10,color:T.muted}}>({agentCsat.length} responses)</span>
+                          </>
+                        : <span style={{fontSize:11,color:T.muted}}>No responses yet</span>
+                      }
+                    </div>
+                  </div>
+                </div>
+                {qaAvg !== null && (
+                  <div style={{flexShrink:0,width:40,height:40,borderRadius:"50%",border:`3px solid ${scoreColor(qaAvg)}`,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",background:`${scoreColor(qaAvg)}10`}}>
+                    <span style={{fontSize:12,fontWeight:700,color:scoreColor(qaAvg),lineHeight:1}}>{qaAvg}</span>
+                    <span style={{fontSize:7,color:T.muted,lineHeight:1.4}}>QA</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+        <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+          <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,fontSize:13,fontWeight:600,color:T.text}}>QA Performance</div>
+          <div style={{padding:16}}>
+            {mine.length > 0 ? (
+              <>
+                <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:12}}>
+                  <PieChart pass={pass} fail={fail} needsWork={needsWork} size={90}/>
+                  <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                    <div style={{fontSize:11,color:T.muted}}>Avg: <span style={{fontWeight:700,color:avg!==null?scoreColor(avg):T.muted}}>{avg}/100</span></div>
+                    {[{label:"Pass",val:pass,c:"#22C55E"},{label:"Needs work",val:needsWork,c:"#F59E0B"},{label:"Fail",val:fail,c:"#EF4444"}].map((x,i) => (
+                      <div key={i} style={{display:"flex",alignItems:"center",gap:6}}>
+                        <div style={{width:7,height:7,borderRadius:"50%",background:x.c}}/>
+                        <span style={{fontSize:11,color:T.muted}}>{x.label}</span>
+                        <span style={{fontSize:11,fontWeight:600,color:T.text,marginLeft:"auto"}}>{x.val}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {disputeMsg && <div style={{marginBottom:8,padding:"6px 10px",background:"rgba(34,197,94,0.1)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:7,fontSize:12,color:"#22C55E"}}>{disputeMsg}</div>}
+                <button onClick={()=>setQaOpen(o=>!o)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"7px 11px",cursor:"pointer",fontSize:12,color:T.text,fontWeight:500}}>
+                  <span>This month's audits ({visibleQA.length})</span>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{transform:qaOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.2s"}}><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                {qaOpen && (
+                  <div style={{marginTop:8,maxHeight:280,overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
+                    {visibleQA.length === 0
+                      ? <div style={{textAlign:"center",padding:"16px",color:T.muted,fontSize:12}}>No audits this month</div>
+                      : visibleQA.map((r,i) => {
+                          const disputed = hasDisputed(r.id);
+                          return (
+                            <div key={r.id||i} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:8,padding:"9px 12px"}}>
+                              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
+                                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                  <span style={{fontSize:12,fontWeight:600}}>Ticket #{r.ticket_number}</span>
+                                  <span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:`${scoreColor(r.score)}20`,color:scoreColor(r.score)}}>{scoreLabel(r.score)}</span>
+                                  {disputed && <span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:"rgba(245,197,24,0.15)",color:AB.yellow,fontWeight:600}}>Disputed</span>}
+                                </div>
+                                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                  <span style={{fontSize:13,fontWeight:700,color:scoreColor(r.score)}}>{r.score}/100</span>
+                                  {!disputed && (
+                                    <button onClick={()=>setDisputeId(r)}
+                                      style={{padding:"3px 9px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,cursor:"pointer",fontSize:11,color:T.muted,fontWeight:500,transition:"all 0.15s"}}
+                                      onMouseEnter={e=>{e.currentTarget.style.borderColor=AB.yellow;e.currentTarget.style.color=AB.yellow;}}
+                                      onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.color=T.muted;}}>
+                                      Dispute
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              {r.notes && <div style={{fontSize:11,color:T.muted,lineHeight:1.5}}>{r.notes}</div>}
+                              <div style={{fontSize:10,color:T.muted,marginTop:3}}>{fmtDate(r.date_reviewed)}</div>
+                            </div>
+                          );
+                        })
+                    }
+                    {visibleQA.length < mine.length && (
+                      <div style={{textAlign:"center",padding:"8px",fontSize:11,color:T.muted}}>Older records are retained internally but not shown after 30 days.</div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : <div style={{textAlign:"center",padding:"20px 0",color:T.muted,fontSize:12}}>No QA audits yet</div>}
+          </div>
+        </div>
+
+        <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+          <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,fontSize:13,fontWeight:600,color:T.text}}>CSAT</div>
+          <div style={{padding:16}}>
+            {csat.length > 0 ? (
+              <div style={{display:"flex",alignItems:"center",gap:14}}>
+                <CsatPie records={csat} size={90}/>
+                <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                  <div style={{fontSize:11,color:T.muted}}>Responses: <span style={{fontWeight:700,color:T.text}}>{csat.length}</span></div>
+                  {Object.entries(CSAT_COLORS).map(([label,c]) => {
+                    const count = csat.filter(r=>r.satisfaction===label).length;
+                    if (!count) return null;
+                    return (
+                      <div key={label} style={{display:"flex",alignItems:"center",gap:6}}>
+                        <div style={{width:7,height:7,borderRadius:"50%",background:c}}/>
+                        <span style={{fontSize:11,color:T.muted}}>{label}</span>
+                        <span style={{fontSize:11,fontWeight:600,color:T.text,marginLeft:"auto"}}>{count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : <div style={{textAlign:"center",padding:"20px 0",color:T.muted,fontSize:12}}>No CSAT data yet</div>}
+          </div>
+        </div>
+      </div>
+
+      <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+        <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,fontSize:13,fontWeight:600,color:T.text,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span>Daily Checklist</span>
+          <span style={{fontSize:11,color:T.muted,fontWeight:400}}>Team {teamDone}/{activeTasks.length} · Personal {checks.filter(c=>c.is_done).length}/{checks.length}</span>
+        </div>
+        <div style={{padding:16}}>
+          {activeTasks.length > 0 && (
+            <>
+              <div style={{fontSize:11,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:7}}>Team tasks</div>
+              <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:14}}>
+                {activeTasks.map(task => {
+                  const key = `t_${task.id}_${periodKey(task)}`;
+                  const done = !!eodChecks[key];
+                  const overdue = task.due_time && isOverdue(task.due_time) && !done;
+                  return (
+                    <div key={task.id} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 11px",background:overdue?"rgba(239,68,68,0.06)":T.card,borderRadius:8,border:`1px solid ${overdue?"rgba(239,68,68,0.25)":T.border}`}}>
+                      <button onClick={()=>toggleEod(key)} style={{width:17,height:17,borderRadius:5,border:`2px solid ${done?AB.blue:overdue?"#EF4444":T.border}`,background:done?AB.blue:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                        {done && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                      </button>
+                      <span style={{flex:1,fontSize:12,color:overdue?"#FCA5A5":T.text,textDecoration:done?"line-through":"none",opacity:done?0.5:1}}>{task.title}</span>
+                      <div style={{display:"flex",alignItems:"center",gap:5}}>
+                        {task.due_time && <span style={{fontSize:10,color:overdue?"#EF4444":T.muted}}>{overdue?"⚠ ":""}{task.due_time}</span>}
+                        <span style={{fontSize:10,padding:"2px 7px",borderRadius:10,fontWeight:500,textTransform:"capitalize",
+                          background:task.recurrence==="daily"?"rgba(26,79,191,0.12)":task.recurrence==="weekly"?"rgba(139,92,246,0.12)":task.recurrence==="monthly"?"rgba(245,197,24,0.12)":"rgba(34,197,94,0.12)",
+                          color:task.recurrence==="daily"?AB.blue:task.recurrence==="weekly"?"#8B5CF6":task.recurrence==="monthly"?AB.yellow:"#22C55E"
+                        }}>{task.recurrence}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          <div style={{fontSize:11,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:7}}>Personal tasks</div>
+          <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+            <input value={newCheck} onChange={e=>setNewCheck(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addCheck()} placeholder="Add a personal task..." style={{...inp,flex:2,minWidth:140}}/>
+            <input type="time" value={newDue} onChange={e=>setNewDue(e.target.value)} style={{...inp,width:95}} title="Due time (optional)"/>
+            <button onClick={addCheck} style={{padding:"8px 14px",background:AB.blue,color:"#fff",border:"none",borderRadius:7,cursor:"pointer",fontWeight:600,fontSize:13}}>+</button>
+          </div>
+          {checks.length === 0
+            ? <div style={{textAlign:"center",padding:"12px 0",color:T.muted,fontSize:12}}>No personal tasks yet</div>
+            : <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                {checks.map(c => {
+                  const overdue = isOverdue(c.due_time) && !c.is_done;
+                  return (
+                    <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:overdue?"rgba(239,68,68,0.06)":T.card,borderRadius:8,border:`1px solid ${overdue?"rgba(239,68,68,0.25)":T.border}`}}>
+                      <button onClick={()=>toggleCheck(c.id,c.is_done)} style={{width:17,height:17,borderRadius:5,border:`2px solid ${c.is_done?AB.blue:overdue?"#EF4444":T.border}`,background:c.is_done?AB.blue:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                        {c.is_done && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                      </button>
+                      <span style={{flex:1,fontSize:12,color:overdue?"#FCA5A5":T.text,textDecoration:c.is_done?"line-through":"none",opacity:c.is_done?0.5:1}}>{c.item_text}</span>
+                      {c.due_time && <span style={{fontSize:10,color:overdue?"#EF4444":T.muted,fontWeight:overdue?600:400}}>{overdue?"⚠ ":""}{c.due_time}</span>}
+                      <button onClick={()=>deleteCheck(c.id)} style={{background:"transparent",border:"none",cursor:"pointer",color:"rgba(239,68,68,0.4)",fontSize:15,padding:0,lineHeight:1}}>×</button>
+                    </div>
+                  );
+                })}
+              </div>
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminPanel({ T, dark, user, uid, users, setUsers, AB }) {
+  const [aTab, setATab] = useState("qa");
+  const [qa, setQa] = useState([]);
+  const [csat, setCsat] = useState([]);
+  const [ann, setAnn] = useState([]);
+  const [avail, setAvail] = useState([]);
+  const [log, setLog] = useState([]);
+  const [allTasks, setAllTasks] = useState([]);
+  const [disputes, setDisputes] = useState([]);
+  const [taskForm, setTaskForm] = useState({ title:"", assigned_to:"all", recurrence:"daily", due_time:"" });
+  const [taskMsg, setTaskMsg] = useState("");
+  const [msgTo, setMsgTo] = useState("");
+  const [msgText, setMsgText] = useState("");
+  const [msgUrgency, setMsgUrgency] = useState("normal");
+  const [msgSent, setMsgSent] = useState("");
+  const [annoText, setAnnoText] = useState("");
+  const [qaForm, setQaForm] = useState({ agentId:"", ticketNumber:"", score:"", notes:"" });
+  const [qaMsg, setQaMsg] = useState("");
+  const [upMode, setUpMode] = useState("csv");
+  const [csvPrev, setCsvPrev] = useState([]);
+  const [csvMsg, setCsvMsg] = useState("");
+  const [csatPrev, setCsatPrev] = useState([]);
+  const [csatMsg, setCsatMsg] = useState("");
+  const [lastQAUpload, setLastQAUpload] = useState([]);
+  const [lastCsatUpload, setLastCsatUpload] = useState([]);
+  const [pwForm, setPwForm] = useState({ userId:"", newPw:"" });
+  const isSA = user.role === "superadmin";
+  const agents = users.filter(u => u.role === "agent");
+  const inp = { background:T.inp, border:`1px solid ${T.border}`, color:T.text, borderRadius:7, padding:"9px 12px", fontSize:13, fontFamily:"inherit", outline:"none", width:"100%", boxSizing:"border-box" };
+
+  useEffect(() => {
+    (async () => {
+      const [q, c, a, av, l, tk, disp] = await Promise.all([
+        sb.select("qa_records", "order=created_at.desc&limit=200"),
+        sb.select("csat_records", "order=id.desc&limit=500"),
+        sb.select("announcements", "order=id.desc&limit=20"),
+        sb.select("availability", "order=user_id.asc"),
+        sb.select("activity_log", "order=id.desc&limit=100"),
+        sb.select("tasks", "order=id.desc"),
+        sb.select("disputes", "order=id.desc"),
+      ]);
+      setQa(q||[]); setCsat(c||[]); setAnn(a||[]); setAvail(av||[]); setLog(l||[]); setAllTasks(tk||[]); setDisputes(disp||[]);
+    })();
+  }, []);
+
+  const sendMsg = async () => {
+    if (!msgTo || !msgText.trim()) return;
+    const toUser = users.find(u => u.id === msgTo);
+    await sb.insert("messages", { from_user_id:uid, from_name:user.name, to_user_id:msgTo, to_name:toUser?.name||"", message:msgText.trim(), urgency:msgUrgency, is_read:false, created_at:new Date().toISOString() });
+    setMsgSent(`Sent to ${toUser?.name}.`);
+    setMsgTo(""); setMsgText(""); setMsgUrgency("normal");
+    setTimeout(() => setMsgSent(""), 3000);
+  };
+
+  const submitQA = async () => {
+    if (!qaForm.agentId || !qaForm.ticketNumber || qaForm.score === "") return;
+    const score = Number(qaForm.score);
+    if (isNaN(score)||score<0||score>100) { setQaMsg("Score must be 0–100."); return; }
+    const agent = users.find(u => u.id === qaForm.agentId);
+    const rec = { agent_id:qaForm.agentId, agent_name:agent?.name||"", ticket_number:qaForm.ticketNumber.replace("#",""), score, notes:qaForm.notes, reviewed_by:user.name, date_reviewed:new Date().toISOString(), created_at:new Date().toISOString() };
+    const r = await sb.insert("qa_records", rec);
+    if (r && r[0]) setQa(p=>[r[0],...p]);
+    setQaMsg(`Uploaded for ${agent?.name}.`);
+    setQaForm({ agentId:"", ticketNumber:"", score:"", notes:"" });
+    setTimeout(() => setQaMsg(""), 3000);
+  };
+
+  const parseCSVLine = line => {
+    const fields = [];
+    let cur = "", inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQ) {
+        if (ch === '"' && line[i+1] === '"') { cur += '"'; i++; }
+        else if (ch === '"') { inQ = false; }
+        else { cur += ch; }
+      } else {
+        if (ch === '"') { inQ = true; }
+        else if (ch === ',') { fields.push(cur.trim()); cur = ""; }
+        else { cur += ch; }
+      }
+    }
+    fields.push(cur.trim());
+    return fields;
+  };
+
+  const handleQAcsv = async file => {
+    setCsvMsg(""); setCsvPrev([]);
+    const text = (await file.text()).replace(/^\uFEFF/, "").replace(/\r/g, "");
+    const lines = text.split("\n").filter(l => l.trim());
+    if (lines.length < 2) { setCsvMsg("CSV appears empty."); return; }
+    const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim());
+    // Exact matches first, then fuzzy
+    const ni = headers.findIndex(h => h === "agent name") !== -1 ? headers.findIndex(h => h === "agent name") : headers.findIndex(h => h.includes("agent") || h.includes("name"));
+    const ti = headers.findIndex(h => h === "ticket number") !== -1 ? headers.findIndex(h => h === "ticket number") : headers.findIndex(h => h.includes("ticket") || h.includes("number"));
+    const si = headers.findIndex(h => h === "score") !== -1 ? headers.findIndex(h => h === "score") : headers.findIndex(h => h.includes("score"));
+    const ci = headers.findIndex(h => h === "additional comments") !== -1 ? headers.findIndex(h => h === "additional comments") : headers.findIndex(h => h.includes("comment") || h.includes("note"));
+    if (ni === -1 || ti === -1 || si === -1) { setCsvMsg(`Could not find required columns. Found: ${headers.join(", ")}`); return; }
+    const parsed = [];
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const cols = parseCSVLine(lines[i]);
+      const rawName = (cols[ni] || "").trim();
+      const rawTicket = (cols[ti] || "").replace(/\D/g, "");
+      const rawScore = (cols[si] || "").trim();
+      const rawNotes = ci !== -1 ? (cols[ci] || "").trim() : "";
+      const score = Number(rawScore);
+      if (!rawName || !rawTicket || isNaN(score) || rawScore === "") continue;
+      const nameLower = rawName.toLowerCase();
+      const agent = users.find(u => {
+        const uLower = u.name.toLowerCase();
+        return uLower === nameLower || uLower.split(" ").some(p => nameLower.includes(p) && p.length > 2);
+      });
+      parsed.push({ agentId: agent?.id || null, agentName: agent?.name || rawName, ticketNumber: rawTicket, score, notes: rawNotes, matched: !!agent });
+    }
+    if (!parsed.length) { setCsvMsg(`No valid rows found. Headers detected: ${headers.join(", ")}`); return; }
+    setCsvPrev(parsed);
+    const unmatched = [...new Set(parsed.filter(r => !r.matched).map(r => r.agentName))];
+    setCsvMsg(unmatched.length ? `Could not match: ${unmatched.join(", ")}` : `${parsed.length} records parsed — confirm below.`);
+  };
+
+  const handleCsatCSV = async file => {
+    setCsatMsg(""); setCsatPrev([]);
+    const text = (await file.text()).replace(/^\uFEFF/, "").replace(/\r/g, "");
+    const lines = text.split("\n").filter(l => l.trim());
+    if (lines.length < 2) { setCsatMsg("CSV empty."); return; }
+    const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim());
+    // Exact column names from HaloPSA export: Request ID, Client Name, User, Subject, Ticket Type, Date Closed, Technician, Satisfaction, Comments
+    const idx = {
+      id:      headers.findIndex(h => h === "request id")      !== -1 ? headers.findIndex(h => h === "request id")      : headers.findIndex(h => h.includes("request") || (h.includes("id") && !h.includes("client"))),
+      client:  headers.findIndex(h => h === "client name")     !== -1 ? headers.findIndex(h => h === "client name")     : headers.findIndex(h => h.includes("client")),
+      user:    headers.findIndex(h => h === "user")            !== -1 ? headers.findIndex(h => h === "user")            : headers.findIndex(h => h.includes("user") && !h.includes("tech")),
+      subject: headers.findIndex(h => h === "subject")         !== -1 ? headers.findIndex(h => h === "subject")         : headers.findIndex(h => h.includes("subject")),
+      date:    headers.findIndex(h => h === "date closed")     !== -1 ? headers.findIndex(h => h === "date closed")     : headers.findIndex(h => h.includes("date")),
+      tech:    headers.findIndex(h => h === "technician")      !== -1 ? headers.findIndex(h => h === "technician")      : headers.findIndex(h => h.includes("technician") || h.includes("tech")),
+      sat:     headers.findIndex(h => h === "satisfaction")    !== -1 ? headers.findIndex(h => h === "satisfaction")    : headers.findIndex(h => h.includes("satisfaction") || h.includes("rating")),
+      comment: headers.findIndex(h => h === "comments")        !== -1 ? headers.findIndex(h => h === "comments")        : headers.findIndex(h => h.includes("comment") || h.includes("feedback")),
+    };
+    if (idx.tech === -1 || idx.sat === -1) { setCsatMsg(`Could not find Technician/Satisfaction columns. Found: ${headers.join(", ")}`); return; }
+    const parsed = [];
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const cols = parseCSVLine(lines[i]);
+      const tech = idx.tech !== -1 ? (cols[idx.tech] || "").trim() : "";
+      if (!tech) continue;
+      const nameLower = tech.toLowerCase();
+      const agent = users.find(u => {
+        const uLower = u.name.toLowerCase();
+        return uLower === nameLower || uLower.split(" ").some(p => nameLower.includes(p) && p.length > 2);
+      });
+      parsed.push({
+        request_id:    idx.id      !== -1 ? (cols[idx.id]      || "").trim() : "",
+        client_name:   idx.client  !== -1 ? (cols[idx.client]  || "").trim() : "",
+        user_name:     idx.user    !== -1 ? (cols[idx.user]    || "").trim() : "",
+        subject:       idx.subject !== -1 ? (cols[idx.subject] || "").trim() : "",
+        date_closed:   idx.date    !== -1 ? (cols[idx.date]    || "").trim() : "",
+        technician:    tech,
+        technician_id: agent?.id || "",
+        satisfaction:  idx.sat     !== -1 ? (cols[idx.sat]     || "").trim() : "",
+        comments:      idx.comment !== -1 ? (cols[idx.comment] || "").trim() : "",
+        week_label:    "",
+        matched:       !!agent,
+      });
+    }
+    if (!parsed.length) { setCsatMsg(`No valid rows. Headers: ${headers.join(", ")}`); return; }
+    setCsatPrev(parsed);
+    const unmatched = [...new Set(parsed.filter(r => !r.matched).map(r => r.technician))].filter(Boolean);
+    setCsatMsg(unmatched.length ? `Unmatched technicians: ${unmatched.join(", ")}` : `${parsed.length} records — confirm below.`);
+  };
+
+  const confirmQAcsv = async () => {
+    const valid = csvPrev.filter(r => r.matched);
+    if (!valid.length) { setCsvMsg("No matched records."); return; }
+    const recs = valid.map(r => ({ agent_id:r.agentId, agent_name:r.agentName, ticket_number:r.ticketNumber, score:r.score, notes:r.notes, reviewed_by:user.name, date_reviewed:new Date().toISOString(), created_at:new Date().toISOString() }));
+    setCsvMsg("Uploading...");
+    const inserted = await sb.insert("qa_records", recs);
+    setQa(p => [...(inserted||[]), ...p]);
+    setLastQAUpload(valid);
+    setCsvMsg(`${recs.length} records uploaded.`);
+    setCsvPrev([]);
+    setTimeout(() => setCsvMsg(""), 6000);
+  };
+
+  const confirmCsatCSV = async () => {
+    const valid = csatPrev.filter(r=>r.matched);
+    if (!valid.length) { setCsatMsg("No matched records."); return; }
+    const recs = valid.map(({ matched, ...r }) => ({ ...r, created_at:new Date().toISOString() }));
+    setCsatMsg("Uploading...");
+    const inserted = await sb.insert("csat_records", recs);
+    setCsat(p=>[...(inserted||[]),...p]);
+    setLastCsatUpload(valid);
+    setCsatMsg(`${recs.length} CSAT records uploaded.`);
+    setCsatPrev([]);
+    setTimeout(() => setCsatMsg(""), 6000);
+  };
+
+  const postAnn = async () => {
+    if (!annoText.trim()) return;
+    const r = await sb.insert("announcements", { text:annoText.trim(), author:user.name, date_posted:new Date().toISOString() });
+    if (r && r[0]) setAnn(p=>[r[0],...p]);
+    setAnnoText("");
+  };
+
+  const createTask = async () => {
+    if (!taskForm.title.trim()) return;
+    const r = await sb.insert("tasks", { title:taskForm.title.trim(), assigned_to:taskForm.assigned_to, recurrence:taskForm.recurrence, due_time:taskForm.due_time||null, created_by:user.name });
+    if (r && r[0]) setAllTasks(p=>[r[0],...p]);
+    setTaskMsg("Task created.");
+    setTaskForm({ title:"", assigned_to:"all", recurrence:"daily", due_time:"" });
+    setTimeout(() => setTaskMsg(""), 3000);
+  };
+
+  const updateDisputeStatus = async (id, status) => {
+    await sb.update("disputes", {id}, {status});
+    setDisputes(p=>p.map(d=>d.id===id?{...d,status}:d));
+  };
+
+  const agentStatus = id => avail.find(a=>a.user_id===id);
+  const agentQA = id => qa.filter(r=>r.agent_id===id);
+  const agentCSAT = id => csat.filter(r=>r.technician_id===id);
+  const agentAvg = id => { const r=agentQA(id); return r.length ? Math.round(r.reduce((s,x)=>s+x.score,0)/r.length) : null; };
+  const csatAvg = id => { const r=agentCSAT(id); return r.length ? (r.reduce((s,x)=>s+(CSAT_MAP[x.satisfaction]||3),0)/r.length).toFixed(2) : null; };
+  const openDisputes = disputes.filter(d=>d.status==="open").length;
+
+  const tabs = [
+    {v:"qa",label:"QA Upload"},{v:"csat",label:"CSAT"},{v:"team",label:"Team"},
+    {v:"tasks",label:"Tasks"},{v:"disputes",label:openDisputes>0?`Disputes (${openDisputes})`:"Disputes"},
+    {v:"messages",label:"Messages"},{v:"announce",label:"Announcements"},{v:"log",label:"Activity Log"},
+    ...(isSA?[{v:"users",label:"Users"}]:[]),
+  ];
+
+  return (
+    <div style={{animation:"fadeUp 0.3s ease"}}>
+      <div style={{fontSize:15,fontWeight:700,marginBottom:14,color:T.text}}>Admin Panel</div>
+      <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:4,display:"flex",flexWrap:"wrap",gap:3,marginBottom:18}}>
+        {tabs.map(({v,label}) => (
+          <button key={v} onClick={()=>setATab(v)} style={{padding:"6px 14px",border:"none",borderRadius:7,cursor:"pointer",fontSize:12,fontWeight:aTab===v?600:400,background:aTab===v?T.mid:"transparent",color:aTab===v?T.text:T.muted,boxShadow:aTab===v?"0 1px 3px rgba(0,0,0,0.15)":"none",transition:"all 0.15s",whiteSpace:"nowrap"}}>{label}</button>
+        ))}
+      </div>
+
+      {aTab==="qa" && (
+        <div style={{display:"flex",flexDirection:"column",gap:13}}>
+          <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+            <div style={{display:"flex",borderBottom:`1px solid ${T.border}`}}>
+              {[["csv","CSV Upload"],["manual","Manual Entry"]].map(([v,l]) => (
+                <button key={v} onClick={()=>setUpMode(v)} style={{flex:1,padding:"10px 0",border:"none",background:"transparent",cursor:"pointer",fontSize:13,fontWeight:upMode===v?600:400,color:upMode===v?AB.yellow:T.muted,borderBottom:upMode===v?`2px solid ${AB.yellow}`:"2px solid transparent",transition:"all 0.15s"}}>{l}</button>
+              ))}
+            </div>
+            <div style={{padding:20}}>
+              {upMode==="csv" ? (
+                <>
+                  <label style={{display:"flex",flexDirection:"column",alignItems:"center",border:`1.5px dashed ${T.border}`,borderRadius:10,padding:"22px 16px",cursor:"pointer",background:T.card}}>
+                    <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:3}}>Drop QA CSV or click to browse</div>
+                    <div style={{fontSize:11,color:T.muted}}>Requires: Agent Name, Ticket Number, Score</div>
+                    <input type="file" accept=".csv" onChange={e=>{const f=e.target.files[0];if(f)handleQAcsv(f);}} style={{display:"none"}}/>
+                  </label>
+                  {csvMsg && <div style={{marginTop:10,padding:"8px 12px",background:csvMsg.includes("Could")||csvMsg.includes("No")?"rgba(239,68,68,0.08)":"rgba(34,197,94,0.08)",border:`1px solid ${csvMsg.includes("Could")||csvMsg.includes("No")?"rgba(239,68,68,0.3)":"rgba(34,197,94,0.3)"}`,borderRadius:7,fontSize:12,color:csvMsg.includes("Could")||csvMsg.includes("No")?"#FCA5A5":"#22C55E"}}>{csvMsg}</div>}
+                  {csvPrev.length>0 && (
+                    <div style={{marginTop:12}}>
+                      <div style={{maxHeight:200,overflowY:"auto",background:T.card,border:`1px solid ${T.border}`,borderRadius:8}}>
+                        {csvPrev.map((r,i) => (
+                          <div key={i} style={{padding:"8px 12px",borderBottom:i<csvPrev.length-1?`1px solid ${T.border}`:"none",display:"flex",alignItems:"center",gap:8}}>
+                            <div style={{width:6,height:6,borderRadius:"50%",background:r.matched?"#22C55E":"#EF4444",flexShrink:0}}/>
+                            <span style={{fontSize:12,fontWeight:600,color:r.matched?T.text:"#FCA5A5"}}>{r.agentName}</span>
+                            <span style={{fontSize:11,color:T.muted}}>#{r.ticketNumber}</span>
+                            <span style={{fontSize:12,fontWeight:700,color:scoreColor(r.score)}}>{r.score}/100</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{display:"flex",gap:8,marginTop:10}}>
+                        <button onClick={confirmQAcsv} style={{padding:"8px 18px",background:AB.blue,color:"#fff",border:"none",borderRadius:7,cursor:"pointer",fontWeight:600,fontSize:12}}>Confirm & Upload {csvPrev.filter(r=>r.matched).length}</button>
+                        <button onClick={()=>{setCsvPrev([]);setCsvMsg("");}} style={{padding:"8px 12px",background:"transparent",color:T.muted,border:`1px solid ${T.border}`,borderRadius:7,cursor:"pointer",fontSize:12}}>Clear</button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                    <div>
+                      <div style={{fontSize:10,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Agent</div>
+                      <select value={qaForm.agentId} onChange={e=>setQaForm(p=>({...p,agentId:e.target.value}))} style={inp}><option value="">Select...</option>{agents.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Ticket #</div>
+                      <input value={qaForm.ticketNumber} onChange={e=>setQaForm(p=>({...p,ticketNumber:e.target.value}))} placeholder="e.g. 0054610" style={inp}/>
+                    </div>
+                  </div>
+                  <div style={{marginBottom:10}}>
+                    <div style={{fontSize:10,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Score (0–100)</div>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <input type="number" min="0" max="100" value={qaForm.score} onChange={e=>setQaForm(p=>({...p,score:e.target.value}))} style={{...inp,width:120}}/>
+                      {qaForm.score!==""&&!isNaN(Number(qaForm.score))&&<span style={{fontSize:12,fontWeight:600,color:scoreColor(Number(qaForm.score))}}>{scoreLabel(Number(qaForm.score))}</span>}
+                    </div>
+                  </div>
+                  <div style={{marginBottom:13}}>
+                    <div style={{fontSize:10,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Notes</div>
+                    <textarea value={qaForm.notes} onChange={e=>setQaForm(p=>({...p,notes:e.target.value}))} rows={3} style={{...inp,resize:"vertical",lineHeight:1.65}}/>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <button onClick={submitQA} style={{padding:"8px 20px",background:AB.blue,color:"#fff",border:"none",borderRadius:7,cursor:"pointer",fontWeight:600,fontSize:13}}>Upload</button>
+                    {qaMsg && <span style={{fontSize:12,color:"#22C55E"}}>{qaMsg}</span>}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+            <div style={{padding:"11px 16px",borderBottom:`1px solid ${T.border}`,fontSize:13,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <span>All QA Records ({qa.length})</span>
+              <button onClick={async()=>{const fresh=await sb.select("qa_records","order=created_at.desc&limit=200");setQa(fresh||[]);}} style={{padding:"3px 9px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,cursor:"pointer",fontSize:10,color:T.muted}}>↻ Re-fetch</button>
+            </div>
+            {qa.length===0 ? <div style={{padding:"24px",textAlign:"center",color:T.muted,fontSize:13}}>No records yet</div> :
+              qa.slice(0,50).map((r,i) => (
+                <div key={r.id||i} style={{padding:"10px 16px",borderBottom:i<Math.min(qa.length,50)-1?`1px solid ${T.border}`:"none",display:"flex",alignItems:"flex-start",gap:10}}>
+                  <div style={{flex:1}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                      <span style={{fontSize:12,fontWeight:600}}>{r.agent_name}</span>
+                      <span style={{fontSize:11,color:T.muted}}>#{r.ticket_number}</span>
+                      <span style={{fontSize:12,fontWeight:700,color:scoreColor(r.score)}}>{r.score}/100</span>
+                      <span style={{fontSize:10,padding:"1px 6px",borderRadius:12,background:`${scoreColor(r.score)}20`,color:scoreColor(r.score)}}>{scoreLabel(r.score)}</span>
+                    </div>
+                    {r.notes && <div style={{fontSize:11,color:T.muted}}>{r.notes}</div>}
+                  </div>
+                  <button onClick={async()=>{await sb.del("qa_records",{id:r.id});setQa(p=>p.filter(x=>x.id!==r.id));}} style={{background:"transparent",border:"none",cursor:"pointer",color:"rgba(239,68,68,0.5)",fontSize:16,padding:0,lineHeight:1}}>×</button>
+                </div>
+              ))
+            }
+          </div>
+          {lastQAUpload.length > 0 && (
+            <div style={{background:T.mid,border:"1px solid rgba(34,197,94,0.3)",borderRadius:13,overflow:"hidden"}}>
+              <div style={{padding:"11px 16px",borderBottom:"1px solid rgba(34,197,94,0.15)",fontSize:13,fontWeight:600,color:"#22C55E",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span>✓ Last upload — {lastQAUpload.length} records confirmed</span>
+                <button onClick={()=>setLastQAUpload([])} style={{background:"transparent",border:"none",cursor:"pointer",color:"rgba(34,197,94,0.5)",fontSize:14,padding:0,lineHeight:1}}>×</button>
+              </div>
+              <div style={{maxHeight:220,overflowY:"auto"}}>
+                {lastQAUpload.map((r,i) => (
+                  <div key={i} style={{padding:"9px 16px",borderBottom:i<lastQAUpload.length-1?`1px solid ${T.border}`:"none",display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{width:6,height:6,borderRadius:"50%",background:"#22C55E",flexShrink:0}}/>
+                    <span style={{fontSize:12,fontWeight:600,flex:1}}>{r.agentName}</span>
+                    <span style={{fontSize:11,color:T.muted}}>Ticket #{r.ticketNumber}</span>
+                    <span style={{fontSize:12,fontWeight:700,color:scoreColor(r.score)}}>{r.score}/100</span>
+                    <span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:`${scoreColor(r.score)}20`,color:scoreColor(r.score)}}>{scoreLabel(r.score)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {aTab==="csat" && (
+        <div style={{display:"flex",flexDirection:"column",gap:13}}>
+          <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,padding:20}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <div style={{fontSize:13,fontWeight:600}}>Upload CSAT CSV</div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:11,color:T.muted}}>{csat.length} records in state</span>
+                <button onClick={async()=>{
+                  const fresh = await sb.select("csat_records","order=id.desc&limit=500");
+                  setCsat(fresh||[]);
+                }} style={{padding:"3px 9px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,cursor:"pointer",fontSize:10,color:T.muted}}>↻ Re-fetch</button>
+              </div>
+            </div>
+            <label style={{display:"flex",flexDirection:"column",alignItems:"center",border:`1.5px dashed ${T.border}`,borderRadius:10,padding:"22px 16px",cursor:"pointer",background:T.card}}>
+              <div style={{fontSize:13,fontWeight:600,color:T.text,marginBottom:3}}>Drop CSAT CSV or click to browse</div>
+              <div style={{fontSize:11,color:T.muted}}>Tab or comma separated · auto-detects columns</div>
+              <input type="file" accept=".csv,.tsv,.txt" onChange={e=>{const f=e.target.files[0];if(f)handleCsatCSV(f);}} style={{display:"none"}}/>
+            </label>
+            {csatMsg && <div style={{marginTop:10,padding:"8px 12px",background:csatMsg.includes("Unmatched")?"rgba(245,197,24,0.08)":"rgba(34,197,94,0.08)",border:`1px solid ${csatMsg.includes("Unmatched")?"rgba(245,197,24,0.3)":"rgba(34,197,94,0.3)"}`,borderRadius:7,fontSize:12,color:csatMsg.includes("Unmatched")?AB.yellow:"#22C55E"}}>{csatMsg}</div>}
+            {csatPrev.length>0 && (
+              <div style={{marginTop:12}}>
+                <div style={{maxHeight:200,overflowY:"auto",background:T.card,border:`1px solid ${T.border}`,borderRadius:8}}>
+                  {csatPrev.map((r,i) => (
+                    <div key={i} style={{padding:"7px 12px",borderBottom:i<csatPrev.length-1?`1px solid ${T.border}`:"none",display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{width:6,height:6,borderRadius:"50%",background:r.matched?"#22C55E":"#EF4444",flexShrink:0}}/>
+                      <span style={{fontSize:12,fontWeight:600,color:r.matched?T.text:"#FCA5A5"}}>{r.technician}</span>
+                      <span style={{fontSize:11,color:T.muted}}>#{r.request_id}</span>
+                      <span style={{fontSize:11,color:(CSAT_MAP[r.satisfaction]||0)>=4?"#22C55E":(CSAT_MAP[r.satisfaction]||0)>=3?"#F59E0B":"#EF4444"}}>{r.satisfaction}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{display:"flex",gap:8,marginTop:10}}>
+                  <button onClick={confirmCsatCSV} style={{padding:"8px 18px",background:"#22C55E",color:"#fff",border:"none",borderRadius:7,cursor:"pointer",fontWeight:600,fontSize:12}}>Confirm & Upload {csatPrev.filter(r=>r.matched).length}</button>
+                  <button onClick={()=>{setCsatPrev([]);setCsatMsg("");}} style={{padding:"8px 12px",background:"transparent",color:T.muted,border:`1px solid ${T.border}`,borderRadius:7,cursor:"pointer",fontSize:12}}>Clear</button>
+                </div>
+              </div>
+            )}
+          </div>
+          <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+            <div style={{padding:"11px 16px",borderBottom:`1px solid ${T.border}`,fontSize:13,fontWeight:600}}>CSAT by Agent</div>
+            {agents.map((a,i) => {
+              const c=agentCSAT(a.id), avg=csatAvg(a.id);
+              return (
+                <div key={a.id} style={{padding:"11px 16px",borderBottom:i<agents.length-1?`1px solid ${T.border}`:"none",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <span style={{fontSize:13,fontWeight:600}}>{a.name}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:11,color:T.muted}}>{c.length} responses</span>
+                    {avg && <span style={{fontSize:13,fontWeight:700,color:Number(avg)>=4?"#22C55E":Number(avg)>=3?"#F59E0B":"#EF4444"}}>{avg}/5</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {lastCsatUpload.length > 0 && (
+            <div style={{background:T.mid,border:"1px solid rgba(34,197,94,0.3)",borderRadius:13,overflow:"hidden"}}>
+              <div style={{padding:"11px 16px",borderBottom:"1px solid rgba(34,197,94,0.15)",fontSize:13,fontWeight:600,color:"#22C55E",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span>✓ Last upload — {lastCsatUpload.length} CSAT records confirmed</span>
+                <button onClick={()=>setLastCsatUpload([])} style={{background:"transparent",border:"none",cursor:"pointer",color:"rgba(34,197,94,0.5)",fontSize:14,padding:0,lineHeight:1}}>×</button>
+              </div>
+              <div style={{maxHeight:240,overflowY:"auto"}}>
+                {lastCsatUpload.map((r,i) => {
+                  const satScore = CSAT_MAP[r.satisfaction]||0;
+                  const satColor = satScore>=4?"#22C55E":satScore>=3?"#F59E0B":"#EF4444";
+                  return (
+                    <div key={i} style={{padding:"9px 16px",borderBottom:i<lastCsatUpload.length-1?`1px solid ${T.border}`:"none",display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{width:6,height:6,borderRadius:"50%",background:"#22C55E",flexShrink:0}}/>
+                      <span style={{fontSize:12,fontWeight:600,flex:1}}>{r.technician}</span>
+                      <span style={{fontSize:11,color:T.muted,flex:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.client_name || r.subject || `#${r.request_id}`}</span>
+                      <span style={{fontSize:11,fontWeight:600,color:satColor,padding:"1px 7px",borderRadius:10,background:`${satColor}18`}}>{r.satisfaction}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {aTab==="team" && (
+        <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+          <div style={{padding:"11px 16px",borderBottom:`1px solid ${T.border}`,fontSize:13,fontWeight:600}}>Team Status</div>
+          {agents.map((a,i) => {
+            const st=agentStatus(a.id), status=st?.status||"afk", avg=agentAvg(a.id), cavg=csatAvg(a.id);
+            return (
+              <div key={a.id} style={{padding:"13px 16px",borderBottom:i<agents.length-1?`1px solid ${T.border}`:"none"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:34,height:34,borderRadius:"50%",background:AB.blue,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:"#fff",flexShrink:0}}>{a.name.charAt(0)}</div>
+                  <div style={{flex:1}}>
+                    <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3}}>
+                      <span style={{fontSize:13,fontWeight:600}}>{a.name}</span>
+                      <div style={{display:"flex",alignItems:"center",gap:4,padding:"2px 8px",background:`${STATUS_COLORS[status]||"#888"}20`,borderRadius:10}}>
+                        <div style={{width:6,height:6,borderRadius:"50%",background:STATUS_COLORS[status]||"#888"}}/>
+                        <span style={{fontSize:11,color:STATUS_COLORS[status]||"#888",textTransform:"capitalize"}}>{status}</span>
+                      </div>
+                      {st && <span style={{fontSize:10,color:T.muted}}>{durSince(st.since)}</span>}
+                    </div>
+                    <div style={{display:"flex",gap:12}}>
+                      <span style={{fontSize:11,color:T.muted}}>QA: <span style={{fontWeight:600,color:avg!==null?scoreColor(avg):T.muted}}>{avg!==null?`${avg}/100`:"—"}</span></span>
+                      <span style={{fontSize:11,color:T.muted}}>CSAT: <span style={{fontWeight:600,color:cavg?Number(cavg)>=4?"#22C55E":Number(cavg)>=3?"#F59E0B":"#EF4444":T.muted}}>{cavg?`${cavg}/5`:"—"}</span></span>
+                      <span style={{fontSize:11,color:T.muted}}>Audits: {agentQA(a.id).length}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {aTab==="tasks" && (
+        <div style={{display:"flex",flexDirection:"column",gap:13}}>
+          <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,padding:20}}>
+            <div style={{fontSize:13,fontWeight:600,marginBottom:13}}>Create Team Task</div>
+            <div style={{marginBottom:10}}>
+              <div style={{fontSize:10,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Task title</div>
+              <input value={taskForm.title} onChange={e=>setTaskForm(p=>({...p,title:e.target.value}))} placeholder="e.g. Close all open tickets" style={inp}/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:13}}>
+              <div>
+                <div style={{fontSize:10,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Assigned to</div>
+                <select value={taskForm.assigned_to} onChange={e=>setTaskForm(p=>({...p,assigned_to:e.target.value}))} style={inp}>
+                  <option value="all">All agents</option>
+                  {agents.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{fontSize:10,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Recurrence</div>
+                <select value={taskForm.recurrence} onChange={e=>setTaskForm(p=>({...p,recurrence:e.target.value}))} style={inp}>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly (Mon)</option>
+                  <option value="monthly">Monthly (1st)</option>
+                  <option value="one-time">One-time</option>
+                </select>
+              </div>
+              <div>
+                <div style={{fontSize:10,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Due time (optional)</div>
+                <input type="time" value={taskForm.due_time} onChange={e=>setTaskForm(p=>({...p,due_time:e.target.value}))} style={inp}/>
+              </div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <button onClick={createTask} style={{padding:"8px 20px",background:AB.blue,color:"#fff",border:"none",borderRadius:7,cursor:"pointer",fontWeight:600,fontSize:13}}>Create Task</button>
+              {taskMsg && <span style={{fontSize:12,color:"#22C55E"}}>{taskMsg}</span>}
+            </div>
+          </div>
+          <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+            <div style={{padding:"11px 16px",borderBottom:`1px solid ${T.border}`,fontSize:13,fontWeight:600}}>All Tasks ({allTasks.length})</div>
+            {allTasks.length===0 ? <div style={{padding:"24px",textAlign:"center",color:T.muted,fontSize:13}}>No tasks yet</div> :
+              allTasks.map((t,i) => (
+                <div key={t.id} style={{padding:"10px 16px",borderBottom:i<allTasks.length-1?`1px solid ${T.border}`:"none",display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{flex:1}}>
+                    <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:2}}>
+                      <span style={{fontSize:13,fontWeight:600,color:T.text}}>{t.title}</span>
+                      <span style={{fontSize:10,padding:"2px 7px",borderRadius:10,fontWeight:500,textTransform:"capitalize",
+                        background:t.recurrence==="daily"?"rgba(26,79,191,0.15)":t.recurrence==="weekly"?"rgba(139,92,246,0.15)":t.recurrence==="monthly"?"rgba(245,197,24,0.15)":"rgba(34,197,94,0.15)",
+                        color:t.recurrence==="daily"?AB.blue:t.recurrence==="weekly"?"#8B5CF6":t.recurrence==="monthly"?AB.yellow:"#22C55E"}}>{t.recurrence}</span>
+                    </div>
+                    <div style={{fontSize:11,color:T.muted}}>
+                      → <span style={{fontWeight:500,color:T.text}}>{t.assigned_to==="all"?"All agents":agents.find(a=>a.id===t.assigned_to)?.name||t.assigned_to}</span>
+                      {t.due_time && <span style={{marginLeft:8}}>· Due {t.due_time}</span>}
+                      {t.created_by && <span style={{marginLeft:8}}>· By {t.created_by}</span>}
+                    </div>
+                  </div>
+                  <button onClick={async()=>{await sb.del("tasks",{id:t.id});setAllTasks(p=>p.filter(x=>x.id!==t.id));}} style={{background:"transparent",border:"none",cursor:"pointer",color:"rgba(239,68,68,0.5)",fontSize:16,padding:0,lineHeight:1}}>×</button>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      )}
+
+      {aTab==="disputes" && (
+        <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+          <div style={{padding:"11px 16px",borderBottom:`1px solid ${T.border}`,fontSize:13,fontWeight:600,color:T.text,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <span>Disputes</span>
+            <span style={{fontSize:11,color:T.muted}}>{openDisputes} open · {disputes.length} total</span>
+          </div>
+          {disputes.length===0
+            ? <div style={{padding:"28px",textAlign:"center",color:T.muted,fontSize:13}}>No disputes submitted</div>
+            : disputes.map((d,i) => (
+                <div key={d.id||i} style={{padding:"13px 16px",borderBottom:i<disputes.length-1?`1px solid ${T.border}`:"none"}}>
+                  <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12}}>
+                    <div style={{flex:1}}>
+                      <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
+                        <span style={{fontSize:13,fontWeight:600,color:T.text}}>{d.agent_name}</span>
+                        <span style={{fontSize:11,color:T.muted}}>Ticket #{d.ticket_number}</span>
+                        <span style={{fontSize:12,fontWeight:700,color:scoreColor(d.score)}}>{d.score}/100</span>
+                        <span style={{fontSize:10,padding:"2px 8px",borderRadius:10,fontWeight:600,
+                          background:d.status==="open"?"rgba(245,197,24,0.15)":d.status==="resolved"?"rgba(34,197,94,0.12)":"rgba(239,68,68,0.12)",
+                          color:d.status==="open"?AB.yellow:d.status==="resolved"?"#22C55E":"#EF4444"
+                        }}>{d.status}</span>
+                      </div>
+                      <div style={{fontSize:12,color:T.muted,lineHeight:1.6,marginBottom:4,fontStyle:"italic"}}>"{d.reason}"</div>
+                      <div style={{fontSize:10,color:T.muted}}>{fmtDate(d.created_at)}</div>
+                    </div>
+                    {d.status==="open" && (
+                      <div style={{display:"flex",gap:6,flexShrink:0}}>
+                        <button onClick={()=>updateDisputeStatus(d.id,"resolved")} style={{padding:"5px 12px",background:"rgba(34,197,94,0.1)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:6,cursor:"pointer",fontSize:11,color:"#22C55E",fontWeight:600}}>Resolve</button>
+                        <button onClick={()=>updateDisputeStatus(d.id,"rejected")} style={{padding:"5px 12px",background:"rgba(239,68,68,0.08)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:6,cursor:"pointer",fontSize:11,color:"#EF4444",fontWeight:600}}>Reject</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+          }
+        </div>
+      )}
+
+      {aTab==="messages" && (
+        <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,padding:20}}>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:13}}>Send Message</div>
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:10,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>To</div>
+            <select value={msgTo} onChange={e=>setMsgTo(e.target.value)} style={inp}><option value="">Select agent...</option>{agents.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select>
+          </div>
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:10,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Urgency</div>
+            <div style={{display:"flex",gap:8}}>
+              {["normal","urgent"].map(u => (
+                <button key={u} onClick={()=>setMsgUrgency(u)} style={{flex:1,padding:"8px 0",border:`1.5px solid ${msgUrgency===u?u==="urgent"?"#EF4444":AB.blue:T.border}`,borderRadius:7,background:msgUrgency===u?u==="urgent"?"rgba(239,68,68,0.1)":"rgba(26,79,191,0.1)":"transparent",color:msgUrgency===u?u==="urgent"?"#EF4444":AB.blue:T.muted,cursor:"pointer",fontSize:13,fontWeight:msgUrgency===u?600:400}}>
+                  {u==="urgent"?"🚨 Urgent":"💬 Normal"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{marginBottom:13}}>
+            <div style={{fontSize:10,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Message</div>
+            <textarea value={msgText} onChange={e=>setMsgText(e.target.value)} rows={3} placeholder="Type your message..." style={{...inp,resize:"vertical",lineHeight:1.65}}/>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={sendMsg} style={{padding:"8px 20px",background:msgUrgency==="urgent"?"#EF4444":AB.blue,color:"#fff",border:"none",borderRadius:7,cursor:"pointer",fontWeight:600,fontSize:13}}>Send Message</button>
+            {msgSent && <span style={{fontSize:12,color:"#22C55E"}}>{msgSent}</span>}
+          </div>
+        </div>
+      )}
+
+      {aTab==="announce" && (
+        <div style={{display:"flex",flexDirection:"column",gap:13}}>
+          <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,padding:20}}>
+            <div style={{fontSize:13,fontWeight:600,marginBottom:11}}>Post Announcement</div>
+            <textarea value={annoText} onChange={e=>setAnnoText(e.target.value)} rows={3} placeholder="e.g. Reminder: all tickets must have resolution notes before closing..." style={{...inp,resize:"vertical",lineHeight:1.65,marginBottom:11}}/>
+            <button onClick={postAnn} style={{padding:"8px 18px",background:AB.blue,color:"#fff",border:"none",borderRadius:7,cursor:"pointer",fontWeight:600,fontSize:13}}>Post</button>
+          </div>
+          {ann.length>0 && (
+            <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+              {ann.map((a,i) => (
+                <div key={a.id} style={{padding:"11px 16px",borderBottom:i<ann.length-1?`1px solid ${T.border}`:"none",display:"flex",gap:10,alignItems:"flex-start"}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,color:T.text,lineHeight:1.6,marginBottom:3}}>{a.text}</div>
+                    <div style={{fontSize:10,color:T.muted}}>{a.author} · {fmtDate(a.date_posted||a.created_at)}</div>
+                  </div>
+                  <button onClick={async()=>{await sb.del("announcements",{id:a.id});setAnn(p=>p.filter(x=>x.id!==a.id));}} style={{background:"transparent",border:"none",cursor:"pointer",color:"rgba(239,68,68,0.5)",fontSize:16,padding:0,lineHeight:1}}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {aTab==="log" && (
+        <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+          <div style={{padding:"11px 16px",borderBottom:`1px solid ${T.border}`,fontSize:13,fontWeight:600}}>Activity Log</div>
+          {log.length===0 ? <div style={{padding:"24px",textAlign:"center",color:T.muted,fontSize:13}}>No activity yet</div> :
+            log.map((l,i) => (
+              <div key={l.id||i} style={{padding:"8px 16px",borderBottom:i<log.length-1?`1px solid ${T.border}`:"none",display:"flex",gap:10,alignItems:"center"}}>
+                <div style={{width:5,height:5,borderRadius:"50%",background:AB.blue,flexShrink:0}}/>
+                <div style={{flex:1,fontSize:12}}><span style={{fontWeight:600}}>{l.user_name}</span> — {l.action}</div>
+                <div style={{fontSize:10,color:T.muted,whiteSpace:"nowrap"}}>{fmtDate(l.created_at)}</div>
+              </div>
+            ))
+          }
+        </div>
+      )}
+
+      {aTab==="users" && isSA && (
+        <div style={{display:"flex",flexDirection:"column",gap:13}}>
+          <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,padding:20}}>
+            <div style={{fontSize:13,fontWeight:600,marginBottom:12}}>Change Password</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:11}}>
+              <div>
+                <div style={{fontSize:10,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>User</div>
+                <select value={pwForm.userId} onChange={e=>setPwForm(p=>({...p,userId:e.target.value}))} style={inp}><option value="">Select...</option>{users.map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}</select>
+              </div>
+              <div>
+                <div style={{fontSize:10,fontWeight:600,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>New Password</div>
+                <input type="password" value={pwForm.newPw} onChange={e=>setPwForm(p=>({...p,newPw:e.target.value}))} placeholder="New password" style={inp}/>
+              </div>
+            </div>
+            <button onClick={()=>{if(!pwForm.userId||!pwForm.newPw)return;setUsers(users.map(u=>u.id===pwForm.userId?{...u,password:pwForm.newPw}:u));setPwForm({userId:"",newPw:""});alert("Password updated!");}} style={{padding:"8px 18px",background:AB.blue,color:"#fff",border:"none",borderRadius:7,cursor:"pointer",fontWeight:600,fontSize:13}}>Update</button>
+          </div>
+          <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+            {users.map((u,i) => (
+              <div key={u.id} style={{padding:"10px 16px",borderBottom:i<users.length-1?`1px solid ${T.border}`:"none",display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:30,height:30,borderRadius:"50%",background:u.role==="superadmin"?AB.yellow:u.role==="admin"?AB.blue:"#475569",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:u.role==="superadmin"?"#1a1a1a":"#fff"}}>{u.name.charAt(0)}</div>
+                <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>{u.name}</div><div style={{fontSize:10,color:T.muted}}>{u.username} · {u.tier}</div></div>
+                <span style={{fontSize:10,padding:"2px 8px",borderRadius:14,fontWeight:600,
+                  background:u.role==="superadmin"?"rgba(245,197,24,0.15)":u.role==="admin"?"rgba(26,79,191,0.15)":"rgba(71,85,105,0.2)",
+                  color:u.role==="superadmin"?AB.yellow:u.role==="admin"?AB.blue:T.muted}}>{u.role}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Parser({ T, dark, user, uid, AB }) {
+  const [row, setRow] = useState(null);
+  const [emails, setEmails] = useState({});
+  const [eTab, setETab] = useState("closing");
+  const [loadE, setLoadE] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [drag, setDrag] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [url, setUrl] = useState("");
+  const [iTab, setITab] = useState("file");
+  const [showTbl, setShowTbl] = useState(false);
+  const [resolved, setResolved] = useState(null);
+
+  const run = async block => {
+    const txt = await callClaude([{role:"user",content:[block,{type:"text",text:"Extract and return JSON."}]}], PARSE_SYS);
+    const parsed = JSON.parse(txt.replace(/```json|```/g,"").trim());
+    setRow(parsed);
+    const rc = await callClaude([{role:"user",content:[block,{type:"text",text:"Has this issue been fully resolved? Reply only yes or no."}]}], "Answer only yes or no.", 10);
+    setResolved(rc.trim().toLowerCase().startsWith("y"));
+    const c = await callClaude([{role:"user",content:emailPrompt("closing",parsed)}], "Write short friendly IT support emails. Body only.", 600);
+    setEmails({ closing:c.trim() });
+    await sb.insert("activity_log", { user_id:uid, user_name:user.name, action:"Parsed a ticket", created_at:new Date().toISOString() });
+  };
+
+  const doFile = async file => {
+    setErr(""); setRow(null); setEmails({}); setShowTbl(false); setResolved(null); setLoading(true);
+    try {
+      const b64 = await new Promise((res,rej) => { const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(file); });
+      await run(file.type==="application/pdf" ? {type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}} : {type:"image",source:{type:"base64",media_type:file.type,data:b64}});
+    } catch { setErr("Failed to parse. Please try again."); }
+    finally { setLoading(false); }
+  };
+
+  const doUrl = async () => {
+    if (!url.trim()) return;
+    setErr(""); setRow(null); setEmails({}); setShowTbl(false); setResolved(null); setLoading(true);
+    try { await run(url.includes(".pdf") ? {type:"document",source:{type:"url",url:url.trim()}} : {type:"image",source:{type:"url",url:url.trim()}}); }
+    catch { setErr("Could not fetch URL. Link may have expired."); }
+    finally { setLoading(false); }
+  };
+
+  const pickTab = async t => {
+    setETab(t);
+    if (!emails[t] && row) {
+      setLoadE(true);
+      const txt = await callClaude([{role:"user",content:emailPrompt(t,row)}], "Write short friendly IT support emails. Body only.", 600);
+      setEmails(p=>({...p,[t]:txt.trim()}));
+      setLoadE(false);
+    }
+  };
+
+  const inp = { background:T.inp, border:`1px solid ${T.border}`, color:T.text, borderRadius:7, padding:"9px 12px", fontSize:13, fontFamily:"inherit", outline:"none" };
+
+  return (
+    <div>
+      {!row && !loading && (
+        <>
+          <div style={{textAlign:"center",marginBottom:20}}>
+            <div style={{fontSize:18,fontWeight:700,marginBottom:4}}>Let's parse a ticket!</div>
+            <div style={{fontSize:13,color:T.muted}}>Upload a file or paste a HaloPSA URL</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",marginBottom:18}}>
+            {["Upload ticket","AI extracts data","Copy, Review & Send"].map((s,i) => (
+              <div key={i} style={{display:"flex",alignItems:"center",flex:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:7}}>
+                  <div style={{width:22,height:22,borderRadius:"50%",background:i===0?AB.yellow:T.card,border:`1.5px solid ${i===0?AB.yellow:T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:i===0?"#1a1a1a":T.muted}}>{i+1}</div>
+                  <span style={{fontSize:11,color:i===0?T.text:T.muted,fontWeight:i===0?500:400}}>{s}</span>
+                </div>
+                {i<2 && <div style={{flex:1,height:1,background:T.border,margin:"0 10px"}}/>}
+              </div>
+            ))}
+          </div>
+          <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+            <div style={{display:"flex",borderBottom:`1px solid ${T.border}`}}>
+              {[["file","📄 Upload"],["url","🔗 URL"],["ticket","🎫 Ticket #"]].map(([t,l]) => (
+                <button key={t} onClick={()=>setITab(t)} style={{flex:1,padding:"11px 0",border:"none",background:"transparent",cursor:"pointer",fontSize:12,fontWeight:iTab===t?600:400,color:iTab===t?AB.yellow:T.muted,borderBottom:iTab===t?`2px solid ${AB.yellow}`:"2px solid transparent",transition:"all 0.15s"}}>{l}</button>
+              ))}
+            </div>
+            <div style={{padding:20}}>
+              {iTab==="file" && (
+                <label onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);const f=e.dataTransfer.files[0];if(f)doFile(f);}}
+                  style={{display:"flex",flexDirection:"column",alignItems:"center",border:`1.5px dashed ${drag?AB.yellow:T.border}`,borderRadius:11,padding:"40px 16px",cursor:"pointer",background:drag?AB.yellowLight:T.card,transition:"all 0.2s"}}>
+                  <div style={{width:46,height:46,borderRadius:12,background:drag?AB.yellow:T.mid,border:`1px solid ${drag?AB.yellow:T.border}`,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:12,transition:"all 0.2s"}}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={drag?"#1a1a1a":T.muted} strokeWidth="1.8" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/></svg>
+                  </div>
+                  <div style={{fontSize:14,fontWeight:600,marginBottom:3,color:T.text}}>Drop your ticket here</div>
+                  <div style={{fontSize:11,color:T.muted}}>PDF or image · or click to browse</div>
+                  <input type="file" accept="application/pdf,image/*" onChange={e=>{const f=e.target.files[0];if(f)doFile(f);}} style={{display:"none"}}/>
+                </label>
+              )}
+              {iTab==="url" && (
+                <div>
+                  <div style={{fontSize:10,color:T.muted,marginBottom:6,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.07em"}}>HaloPSA Print Ticket URL</div>
+                  <div style={{display:"flex",gap:7}}>
+                    <input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doUrl()} placeholder="https://ca-cdn.haloservicedesk.com/..." style={{...inp,flex:1}}/>
+                    <button onClick={doUrl} style={{padding:"9px 18px",background:AB.blue,color:"#fff",border:"none",borderRadius:7,cursor:"pointer",fontWeight:600,fontSize:13}}>Parse →</button>
+                  </div>
+                  <div style={{marginTop:6,fontSize:11,color:T.muted}}>Tip: links expire — make sure yours is fresh!</div>
+                </div>
+              )}
+              {iTab==="ticket" && (
+                <div style={{textAlign:"center",padding:"8px 0"}}>
+                  <div style={{fontSize:14,fontWeight:600,marginBottom:4,color:T.text}}>Enter ticket number</div>
+                  <div style={{fontSize:12,color:T.muted,marginBottom:14}}>Direct HaloPSA integration coming soon!</div>
+                  <div style={{marginTop:14,display:"inline-flex",alignItems:"center",gap:5,background:"rgba(245,197,24,0.08)",border:"1px solid rgba(245,197,24,0.25)",borderRadius:7,padding:"6px 12px"}}>
+                    <span style={{fontSize:11,color:AB.yellow,fontWeight:500}}>⏳ HaloPSA integration coming soon</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {loading && (
+        <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,padding:"48px 20px",textAlign:"center"}}>
+          <div style={{fontSize:28,marginBottom:12}}>🔍</div>
+          <div style={{width:36,height:36,borderRadius:"50%",border:`3px solid ${T.track}`,borderTopColor:AB.yellow,margin:"0 auto 14px",animation:"spin 0.8s linear infinite"}}/>
+          <div style={{fontSize:14,fontWeight:600,marginBottom:4}}>Analyzing your ticket...</div>
+          <div style={{fontSize:12,color:T.muted}}>Hang tight!</div>
+        </div>
+      )}
+
+      {err && <div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",borderRadius:9,padding:"11px 14px",fontSize:13,color:"#FCA5A5",marginBottom:12}}>{err}</div>}
+
+      {row && (
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{background:"rgba(34,197,94,0.1)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:9,padding:"11px 14px",fontSize:13,color:"#86EFAC",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <span>✓ Ticket parsed — drafts ready!</span>
+            <button onClick={()=>{setRow(null);setEmails({});setErr("");setUrl("");setETab("closing");setShowTbl(false);setResolved(null);}} style={{background:"transparent",border:"1px solid rgba(34,197,94,0.4)",color:"#86EFAC",borderRadius:16,padding:"3px 10px",cursor:"pointer",fontSize:11}}>Parse another</button>
+          </div>
+
+          <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+            <div style={{flex:1,minWidth:0,background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+              <div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                <span style={{fontSize:13,fontWeight:600}}>✉️ Email templates</span>
+                <span style={{fontSize:11,color:T.muted}}>· editable</span>
+                <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:5,background:dark?"rgba(245,197,24,0.1)":"rgba(26,79,191,0.08)",border:`1px solid ${dark?"rgba(245,197,24,0.3)":"rgba(26,79,191,0.3)"}`,borderRadius:5,padding:"3px 8px"}}>
+                  <span style={{fontSize:10,color:dark?AB.yellow:AB.blue,fontWeight:500}}>⚠️ AI suggestion — always review before sending</span>
+                </div>
+              </div>
+              <div style={{display:"flex",padding:"10px 16px 0",borderBottom:`1px solid ${T.border}`,overflowX:"auto",gap:3}}>
+                {EMAIL_TYPES.map(t => (
+                  <button key={t} onClick={()=>pickTab(t)} style={{padding:"6px 12px",border:"none",borderRadius:"6px 6px 0 0",cursor:"pointer",fontSize:11,fontWeight:eTab===t?600:400,background:eTab===t?AB.blue:T.card,color:eTab===t?"#fff":T.muted,marginBottom:-1,whiteSpace:"nowrap",transition:"all 0.15s"}}>
+                    {t.charAt(0).toUpperCase()+t.slice(1)}
+                  </button>
+                ))}
+              </div>
+              {eTab==="closing" && resolved===false && (
+                <div style={{margin:"10px 16px 0",display:"flex",alignItems:"center",gap:6,background:"rgba(20,184,166,0.1)",border:"1px solid rgba(20,184,166,0.35)",borderRadius:7,padding:"7px 12px"}}>
+                  <span style={{fontSize:11,color:"#14B8A6",fontWeight:500}}>⚠️ Issue does not appear fully resolved — closing email not recommended.</span>
+                </div>
+              )}
+              <div style={{padding:"14px 16px"}}>
+                {loadE && !emails[eTab]
+                  ? <div style={{display:"flex",alignItems:"center",gap:8,padding:"14px 0",color:T.muted,fontSize:12}}><div style={{width:13,height:13,borderRadius:"50%",border:`2px solid ${T.track}`,borderTopColor:AB.yellow,animation:"spin 0.8s linear infinite",flexShrink:0}}/>Drafting {eTab} email...</div>
+                  : <textarea value={emails[eTab]||""} onChange={e=>setEmails(p=>({...p,[eTab]:e.target.value}))} rows={7} style={{width:"100%",background:T.inp,border:`1px solid ${T.border}`,borderRadius:7,padding:"10px 12px",fontSize:13,lineHeight:1.75,fontFamily:"inherit",resize:"vertical",color:T.text,outline:"none",boxSizing:"border-box"}}/>
+                }
+                <button onClick={()=>{navigator.clipboard.writeText(emails[eTab]||"");setCopied(true);setTimeout(()=>setCopied(false),2000);}} style={{marginTop:10,display:"inline-flex",alignItems:"center",gap:5,padding:"7px 16px",background:copied?"#16a34a":AB.blue,color:"#fff",border:"none",borderRadius:7,cursor:"pointer",fontWeight:600,fontSize:12,transition:"background 0.2s"}}>
+                  {copied?"✓ Copied!":"Copy email"}
+                </button>
+              </div>
+            </div>
+
+            {row.recommended_emails && row.recommended_emails!=="N/A" && (
+              <div style={{width:155,flexShrink:0,background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+                <div style={{padding:"11px 13px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:5}}>
+                  <span style={{fontSize:11}}>⭐</span><span style={{fontSize:12,fontWeight:600}}>Recommended</span>
+                </div>
+                <div style={{padding:"10px 13px",display:"flex",flexDirection:"column",gap:6}}>
+                  <div style={{fontSize:10,color:T.muted}}>Based on this ticket:</div>
+                  {row.recommended_emails.split(",").map(e=>e.trim()).filter(Boolean).map((e,i) => (
+                    <button key={i} onClick={()=>pickTab(e.toLowerCase())} style={{textAlign:"left",padding:"6px 9px",background:eTab===e.toLowerCase()?AB.blue:(dark?"#1E2A3A":"#F1F5F9"),border:`1px solid ${eTab===e.toLowerCase()?AB.blue:T.border}`,borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:500,color:eTab===e.toLowerCase()?"#fff":T.text,transition:"all 0.15s"}}>
+                      › {e.charAt(0).toUpperCase()+e.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {showTbl && (
+            <div style={{background:T.mid,border:`1px solid ${T.border}`,borderRadius:13,overflow:"hidden"}}>
+              <div style={{padding:"11px 16px",borderBottom:`1px solid ${T.border}`,fontSize:13,fontWeight:600}}>📋 Resolution template</div>
+              <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"fixed"}}>
+                <thead><tr>{COLS.map(c=><th key={c} style={{padding:"9px 14px",textAlign:"left",fontSize:10,fontWeight:600,color:T.muted,background:T.card,borderBottom:`1px solid ${T.border}`,textTransform:"uppercase",letterSpacing:"0.07em",width:"33%"}}>{c}</th>)}</tr></thead>
+                <tbody><tr>{[row.description,row.action_taken,row.root_cause].map((v,i)=><td key={i} style={{padding:"12px 14px",fontSize:13,lineHeight:1.65,color:T.text,borderRight:i<2?`1px solid ${T.border}`:"none",verticalAlign:"top"}}>{v}</td>)}</tr></tbody>
+              </table>
+            </div>
+          )}
+          {!showTbl && (
+            <div style={{textAlign:"center",paddingTop:6}}>
+              <button onClick={()=>setShowTbl(true)} style={{padding:"9px 22px",background:"transparent",color:AB.yellow,border:`1.5px solid ${AB.yellow}`,borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:600}}>📋 Generate filled resolution template</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FloatingHelp({ T, dark, AB }) {
+  const [open, setOpen] = useState(false);
+  const [panel, setPanel] = useState("help");
+  const [msgs, setMsgs] = useState([{role:"bot",text:"Hey there! 👋 I'm the AB Assistant. Pick a question or type your own!"}]);
+  const [input, setInput] = useState("");
+  const [typing, setTyping] = useState(false);
+  const [showFAQ, setShowFAQ] = useState(true);
+  const endRef = useRef(null);
+  useEffect(() => { endRef.current?.scrollIntoView({behavior:"smooth"}); }, [msgs,typing]);
+
+  const addMsg = (role,text) => setMsgs(p=>[...p,{role,text}]);
+
+  const faq = async item => {
+    addMsg("user",item.q); setTyping(true);
+    await new Promise(r=>setTimeout(r,600));
+    setTyping(false); addMsg("bot",item.a); setShowFAQ(false);
+  };
+
+  const send = async () => {
+    const m=input.trim(); if(!m) return;
+    setInput(""); addMsg("user",m); setTyping(true);
+    const lower=m.toLowerCase();
+    const match=FAQ.find(f=>f.q.toLowerCase().split(" ").some(w=>w.length>3&&lower.includes(w))||f.a.toLowerCase().split(" ").some(w=>w.length>4&&lower.includes(w)));
+    await new Promise(r=>setTimeout(r,700));
+    setTyping(false);
+    addMsg("bot",match?match.a:"Hmm, not sure! Try a quick question or reach out to Natali at natali.navas@alwaysbeyond.com 😊");
+  };
+
+  const bg = dark?"#16213E":"#fff";
+  const bdr = dark?"rgba(255,255,255,0.07)":"rgba(0,0,0,0.08)";
+  const bubble = dark?"#1E2A3A":"#F1F5F9";
+
+  return (
+    <div style={{position:"fixed",bottom:20,right:20,zIndex:1000,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
+      {open && (
+        <div style={{width:300,background:bg,border:`1px solid ${bdr}`,borderRadius:15,boxShadow:"0 8px 28px rgba(0,0,0,0.2)",overflow:"hidden",animation:"popIn 0.22s ease",display:"flex",flexDirection:"column",maxHeight:440}}>
+          <div style={{background:AB.blue,display:"flex",flexDirection:"column"}}>
+            <div style={{padding:"11px 14px",display:"flex",alignItems:"center",gap:8}}>
+              <div style={{width:28,height:28,borderRadius:"50%",background:AB.yellow,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13}}>{panel==="help"?"🤖":"💡"}</div>
+              <div><div style={{fontSize:12,fontWeight:700,color:"#fff"}}>{panel==="help"?"AB Assistant":"Suggestions"}</div><div style={{fontSize:10,color:"rgba(255,255,255,0.7)"}}>{panel==="help"?"Here to help!":"Share feedback"}</div></div>
+              <button onClick={()=>setOpen(false)} style={{marginLeft:"auto",background:"transparent",border:"none",color:"rgba(255,255,255,0.7)",cursor:"pointer",fontSize:16,lineHeight:1}}>×</button>
+            </div>
+            <div style={{display:"flex",borderTop:"1px solid rgba(255,255,255,0.15)"}}>
+              {[["help","❓ Help"],["suggestions","💡 Suggestions"]].map(([v,l]) => (
+                <button key={v} onClick={()=>setPanel(v)} style={{flex:1,padding:"6px 0",border:"none",background:"transparent",cursor:"pointer",fontSize:11,fontWeight:panel===v?600:400,color:panel===v?"#fff":"rgba(255,255,255,0.6)",borderBottom:panel===v?`2px solid ${AB.yellow}`:"2px solid transparent",transition:"all 0.15s"}}>{l}</button>
+              ))}
+            </div>
+          </div>
+
+          {panel==="help" && (
+            <>
+              <div style={{flex:1,overflowY:"auto",padding:"10px",display:"flex",flexDirection:"column",gap:7}}>
+                {msgs.map((m,i) => (
+                  <div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start",gap:5,alignItems:"flex-end"}}>
+                    {m.role==="bot" && <div style={{width:20,height:20,borderRadius:"50%",background:AB.blue,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,flexShrink:0}}>🤖</div>}
+                    <div style={{maxWidth:"80%",padding:"7px 10px",borderRadius:m.role==="user"?"10px 10px 3px 10px":"10px 10px 10px 3px",background:m.role==="user"?AB.blue:bubble,color:m.role==="user"?"#fff":dark?"#fff":"#0F172A",fontSize:11,lineHeight:1.55}}>{m.text}</div>
+                  </div>
+                ))}
+                {typing && <div style={{display:"flex",alignItems:"flex-end",gap:5}}><div style={{width:20,height:20,borderRadius:"50%",background:AB.blue,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10}}>🤖</div><div style={{padding:"7px 10px",borderRadius:"10px 10px 10px 3px",background:bubble,display:"flex",gap:3,alignItems:"center"}}>{[0,1,2].map(i=><div key={i} style={{width:4,height:4,borderRadius:"50%",background:dark?"#94A3B8":"#64748B",animation:`spin 1s ease-in-out ${i*0.2}s infinite`}}/>)}</div></div>}
+                <div ref={endRef}/>
+              </div>
+              <div style={{borderTop:`1px solid ${bdr}`}}>
+                <button onClick={()=>setShowFAQ(o=>!o)} style={{width:"100%",padding:"7px 10px",background:"transparent",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",color:dark?"#94A3B8":"#64748B",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>
+                  Quick questions
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{transform:showFAQ?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.2s"}}><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                {showFAQ && <div style={{padding:"0 8px 8px",display:"flex",flexDirection:"column",gap:4}}>{FAQ.map((f,i)=><button key={i} onClick={()=>faq(f)} style={{textAlign:"left",padding:"5px 8px",background:bubble,border:`1px solid ${bdr}`,borderRadius:6,cursor:"pointer",fontSize:10,color:dark?"#fff":"#0F172A"}}>{f.q}</button>)}</div>}
+              </div>
+              <div style={{padding:"6px 8px",borderTop:`1px solid ${bdr}`,display:"flex",gap:5}}>
+                <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="Type a question..." style={{flex:1,background:bubble,border:`1px solid ${bdr}`,color:dark?"#fff":"#0F172A",borderRadius:7,padding:"6px 9px",fontSize:11,fontFamily:"inherit",outline:"none"}}/>
+                <button onClick={send} style={{width:28,height:28,borderRadius:7,background:AB.blue,border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+              </div>
+            </>
+          )}
+
+          {panel==="suggestions" && (
+            <div style={{padding:18,textAlign:"center"}}>
+              <div style={{fontSize:12,color:dark?"#94A3B8":"#64748B",marginBottom:16,lineHeight:1.6}}>Got an idea or spotted a bug? Your feedback goes straight to Natali.</div>
+              <button onClick={()=>window.open("https://forms.cloud.microsoft/r/Uayn1Lhj3Q","_blank")} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"9px 20px",background:AB.blue,color:"#fff",borderRadius:7,fontWeight:600,fontSize:12,border:"none",cursor:"pointer"}}>Open suggestions form</button>
+              <div style={{marginTop:10,fontSize:10,color:dark?"#94A3B8":"#64748B"}}>Opens in a new tab · Goes directly to Natali</div>
+            </div>
+          )}
+        </div>
+      )}
+      <button onClick={()=>setOpen(o=>!o)} style={{width:46,height:46,borderRadius:"50%",background:AB.blue,border:`3px solid ${AB.yellow}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 14px rgba(26,79,191,0.4)",transition:"all 0.2s",fontSize:open?18:16,color:"#fff",fontWeight:700}}>
+        {open?"×":"?"}
+      </button>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+  </script>
+</body>
+</html>
