@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Always Beyond Hub</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; }
+    html, body, #root { width: 100%; height: 100%; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    const { useState, useEffect, useRef } = React;
+    const e = React.createElement;
+
+    // Colors
+    const AB = { blue: "#1A4FBF", yellow: "#F5C518" };
+    const DK = { bg: "#F8FAFC", mid: "#fff", card: "#F1F5F9", border: "rgba(0,0,0,0.08)", text: "#0F172A", muted: "#64748B", inp: "#F1F5F9" };
+
+    // Team (16 members with SkySwitch extensions)
+    const TEAM = [
+      { id: "natali", name: "Natali Navas", role: "QA Lead", ext: "120" },
+      { id: "jan", name: "Jan Opiana", role: "L1", ext: "123" },
+      { id: "dave", name: "Dave Smith", role: "L1", ext: "104" },
+      { id: "brandon", name: "Brandon Howarth", role: "L1", ext: "121" },
+      { id: "toni", name: "Toni Panelo", role: "L1", ext: "122" },
+      { id: "ryan", name: "Ryan Butler", role: "L2", ext: "103" },
+      { id: "jag", name: "Jag Rai", role: "L2", ext: "102" },
+      { id: "aina", name: "Aina Manglinong", role: "L3", ext: "108" },
+      { id: "matthew", name: "Matthew Davis", role: "L1", ext: "105" },
+      { id: "scott", name: "Scott", role: "Tech", ext: "114" },
+      { id: "sean", name: "Sean", role: "Tech", ext: "115" },
+      { id: "alex", name: "Alex", role: "Tech", ext: "116" },
+      { id: "eleanor", name: "Eleanor Townley", role: "Account Manager", ext: "106" },
+      { id: "michael", name: "Michael", role: "L3", ext: "125" },
+      { id: "julian", name: "Julian Gelfand", role: "COO", ext: "100" },
+      { id: "phil", name: "Phil Duke", role: "Infrastructure", ext: "107" }
+    ];
+
+    // SkySwitch Config
+    const SKYSWITCH_CONFIG = {
+      clientId: "24771.client",
+      accountId: "120@AlwaysBeyondCorp",
+      apiBase: "https://api.skyswitch.com"
+    };
+
+    const STATUSES = ["Available", "Busy", "In a call", "Onsite", "Lunch", "AFK"];
+    const STATUS_COLORS = {
+      "Available": "#22C55E",
+      "Busy": "#EF4444",
+      "In a call": "#8B5CF6",
+      "Onsite": "#F59E0B",
+      "Lunch": "#F97316",
+      "AFK": "#94A3B8"
+    };
+
+    // Supabase (AB Hub Project)
+    const SB_URL = "https://osqdgxvphxwkdbxbfasz.supabase.co";
+    const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zcWRneHZwaHh3a2RieGJmYXN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxMzkxODIsImV4cCI6MjEwODcxNTE4Mn0.kvYLVtYuEd7YGbH6dDe1vks5qKHcDhbBngMqbx58FFE";
+    const sbHeaders = { "Content-Type": "application/json", "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` };
+
+    const sb = {
+      async select(table, q = "") {
+        try {
+          const url = `${SB_URL}/rest/v1/${table}${q ? "?" + q : ""}`;
+          const r = await fetch(url, { headers: { "apikey": SB_KEY, "Authorization": `Bearer ${SB_KEY}` } });
+          if (!r.ok) return [];
+          return await r.json();
+        } catch (e) { return []; }
+      },
+      async insert(table, data) {
+        try {
+          const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+            method: "POST",
+            headers: { ...sbHeaders, "Prefer": "return=representation" },
+            body: JSON.stringify(data)
+          });
+          if (!r.ok) return null;
+          return await r.json();
+        } catch (e) { return null; }
+      },
+      async upsert(table, data, onConflict) {
+        try {
+          const r = await fetch(`${SB_URL}/rest/v1/${table}?on_conflict=${onConflict}`, {
+            method: "POST",
+            headers: { ...sbHeaders, "Prefer": "resolution=merge-duplicates,return=representation" },
+            body: JSON.stringify(data)
+          });
+          if (!r.ok) return null;
+          return await r.json();
+        } catch (e) { return null; }
+      }
+    };
+
+    // Main App
+    function App() {
+      const [user, setUser] = useState(null);
+      const [tab, setTab] = useState("dashboard");
+      const [loginU, setLoginU] = useState("");
+      const [loginP, setLoginP] = useState("");
+      const [loginErr, setLoginErr] = useState("");
+      const [status, setStatus] = useState("Available");
+      const [statusOpen, setStatusOpen] = useState(false);
+
+      useEffect(() => {
+        if (user && status) {
+          sb.upsert("availability", {
+            user_id: user.id,
+            user_name: user.name,
+            status: status,
+            updated_at: new Date().toISOString()
+          }, "user_id");
+        }
+      }, [status, user]);
+
+      const login = () => {
+        const found = TEAM.find(u => u.id === loginU.toLowerCase());
+        if (found && loginP === "demo") {
+          setUser(found);
+          setLoginErr("");
+        } else {
+          setLoginErr("Invalid credentials (use any user ID + 'demo')");
+        }
+      };
+
+      if (!user) {
+        return e("div", { style: { background: DK.bg, minHeight: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" } },
+          e("div", { style: { width: "100%", maxWidth: 400, background: DK.mid, border: `1px solid ${DK.border}`, borderRadius: 16, padding: 32 } },
+            e("div", { style: { textAlign: "center", marginBottom: 28 } },
+              e("div", { style: { width: 56, height: 56, borderRadius: 14, background: AB.blue, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", fontSize: 24, fontWeight: 700, color: "#fff" } }, "AB"),
+              e("div", { style: { fontSize: 22, fontWeight: 700, color: DK.text, marginBottom: 6 } }, "Always Beyond Hub"),
+              e("div", { style: { fontSize: 13, color: DK.muted } }, "Sign in to continue")
+            ),
+            e("div", { style: { marginBottom: 14 } },
+              e("label", { style: { fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase", display: "block", marginBottom: 6 } }, "Username"),
+              e("input", { value: loginU, onChange: (evt) => setLoginU(evt.target.value), onKeyDown: (evt) => evt.key === "Enter" && login(), placeholder: "e.g. natali", style: { width: "100%", background: DK.inp, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 8, padding: "10px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" } })
+            ),
+            e("div", { style: { marginBottom: 18 } },
+              e("label", { style: { fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase", display: "block", marginBottom: 6 } }, "Password"),
+              e("input", { type: "password", value: loginP, onChange: (evt) => setLoginP(evt.target.value), onKeyDown: (evt) => evt.key === "Enter" && login(), placeholder: "demo", style: { width: "100%", background: DK.inp, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 8, padding: "10px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" } })
+            ),
+            loginErr && e("div", { style: { marginBottom: 14, padding: "10px 12px", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 8, fontSize: 12, color: "#FCA5A5" } }, loginErr),
+            e("button", { onClick: login, style: { width: "100%", padding: 12, background: AB.blue, color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: 14 } }, "Sign in")
+          )
+        );
+      }
+
+      return e("div", { style: { background: DK.bg, minHeight: "100vh", color: DK.text, display: "flex", flexDirection: "column" } },
+        e("div", { style: { background: AB.yellow, padding: "8px 20px", fontSize: 12, fontWeight: 600, color: "#1a1a1a", display: "flex", justifyContent: "space-between", alignItems: "center" } },
+          e("div", null, "Always Beyond · Hub"),
+          e("div", null, "Calgary MSP")
+        ),
+        e("div", { style: { background: AB.blue, padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 } },
+          e("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
+            e("svg", { width: "28", height: "28", viewBox: "0 0 40 40", style: { display: "block" } },
+              e("ellipse", { cx: "20", cy: "20", rx: "18", ry: "11", stroke: "#fff", strokeWidth: "2.2", fill: "none" }),
+              e("ellipse", { cx: "20", cy: "20", rx: "8", ry: "8", stroke: "#fff", strokeWidth: "2.2", fill: "none" })
+            ),
+            e("span", { style: { fontSize: 16, fontWeight: 700, color: "#fff" } }, "Always Beyond Hub")
+          ),
+          e("div", { style: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" } },
+            ["dashboard", "pto", "settings"].map(t => e("button", { key: t, onClick: () => setTab(t), style: { padding: "6px 14px", border: "none", borderRadius: 16, cursor: "pointer", fontSize: 12, fontWeight: tab === t ? 600 : 400, background: tab === t ? "rgba(255,255,255,0.2)" : "transparent", color: "#fff" } }, t === "dashboard" ? "📊 Dashboard" : t === "pto" ? "📅 PTO" : "⚙️ Settings")),
+            e("div", { style: { position: "relative" } },
+              e("button", { onClick: () => setStatusOpen(!statusOpen), style: { padding: "6px 12px", border: "1px solid rgba(255,255,255,0.3)", borderRadius: 16, background: "rgba(255,255,255,0.1)", cursor: "pointer", color: "#fff", fontSize: 11, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 } },
+                e("div", { style: { width: 7, height: 7, borderRadius: "50%", background: STATUS_COLORS[status] } }),
+                status
+              ),
+              statusOpen && e("div", { style: { position: "absolute", top: "calc(100% + 6px)", right: 0, background: DK.mid, border: `1px solid ${DK.border}`, borderRadius: 10, overflow: "hidden", zIndex: 100, minWidth: 120, boxShadow: "0 4px 12px rgba(0,0,0,0.3)" } },
+                STATUSES.map(s => e("button", { key: s, onClick: () => { setStatus(s); setStatusOpen(false); }, style: { width: "100%", padding: "8px 12px", border: "none", background: status === s ? "rgba(26,79,191,0.2)" : "transparent", cursor: "pointer", fontSize: 12, color: "#fff", textAlign: "left", display: "flex", alignItems: "center", gap: 6 } },
+                  e("div", { style: { width: 6, height: 6, borderRadius: "50%", background: STATUS_COLORS[s] } }),
+                  s
+                ))
+              )
+            ),
+            e("div", { style: { display: "flex", alignItems: "center", gap: 8, marginLeft: 12, paddingLeft: 12, borderLeft: `1px solid rgba(255,255,255,0.2)` } },
+              e("div", { style: { width: 24, height: 24, borderRadius: "50%", background: AB.yellow, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#1a1a1a" } }, user.name.charAt(0)),
+              e("span", { style: { fontSize: 12, color: "#fff", fontWeight: 500 } }, user.name.split(" ")[0]),
+              e("button", { onClick: () => setUser(null), style: { background: "transparent", border: "none", color: "rgba(255,255,255,0.6)", cursor: "pointer", fontSize: 11 } }, "Sign out")
+            )
+          )
+        ),
+        e("div", { style: { flex: 1, overflow: "auto", padding: 20, maxWidth: 1200, width: "100%", margin: "0 auto" } },
+          tab === "dashboard" && e(Dashboard, { user, TEAM }),
+          tab === "pto" && e(PTOCalendar, { user, TEAM }),
+          tab === "settings" && e(Settings, { user, TEAM })
+        )
+      );
+    }
+
+    // Dashboard Tab
+    function Dashboard({ user, TEAM }) {
+      const [kudoTo, setKudoTo] = useState("");
+      const [kudoMsg, setKudoMsg] = useState("");
+      const [kudoSent, setKudoSent] = useState("");
+      const [statuses, setStatuses] = useState({});
+      const [kudos, setKudos] = useState([]);
+      const [locationFilter, setLocationFilter] = useState("All");
+      const [teamLocations, setTeamLocations] = useState({});
+      const [phoneStatus, setPhoneStatus] = useState({});
+      const [activeCalls, setActiveCalls] = useState(0);
+      const [missedCalls, setMissedCalls] = useState(0);
+
+      useEffect(() => {
+        // Load statuses
+        sb.select("availability").then(data => {
+          const map = {};
+          data.forEach(d => map[d.user_id] = d.status);
+          setStatuses(map);
+        });
+        // Load team locations
+        sb.select("team_locations").then(data => {
+          const map = {};
+          if (data && Array.isArray(data)) {
+            data.forEach(d => map[d.user_id] = d.location);
+          }
+          // Set defaults
+          TEAM.forEach(t => {
+            if (!(t.id in map)) map[t.id] = "Onsite";
+          });
+          setTeamLocations(map);
+        });
+        // Load kudos
+        sb.select("kudos", "order=created_at.desc&limit=20").then(data => setKudos(data || []));
+
+        // Load SkySwitch phone status (from Edge Function)
+        fetchSkySwitch();
+      }, []);
+
+      const fetchSkySwitch = async () => {
+        try {
+          // Call Supabase Edge Function for SkySwitch data
+          const response = await fetch(`${SB_URL}/functions/v1/skyswitch-status`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${SB_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ accountId: SKYSWITCH_CONFIG.accountId, teamExtensions: TEAM.map(t => t.ext) })
+          });
+          if (!response.ok) return;
+          const data = await response.json();
+          setPhoneStatus(data.agentStatus || {});
+          setActiveCalls(data.activeCalls || 0);
+          setMissedCalls(data.missedCalls || 0);
+        } catch (err) {
+          console.log("SkySwitch fetch error (Edge Function not yet deployed):", err.message);
+        }
+      };
+
+      const sendKudo = async () => {
+        if (!kudoTo || !kudoMsg.trim()) return;
+        const recipient = TEAM.find(u => u.id === kudoTo);
+        await sb.insert("kudos", {
+          from_id: user.id,
+          from_name: user.name,
+          to_id: kudoTo,
+          to_name: recipient?.name,
+          message: kudoMsg.trim(),
+          created_at: new Date().toISOString()
+        });
+        setKudoTo("");
+        setKudoMsg("");
+        setKudoSent(`Kudo sent to ${recipient?.name}! 🎉`);
+        setTimeout(() => setKudoSent(""), 3000);
+        sb.select("kudos", "order=created_at.desc&limit=20").then(data => setKudos(data || []));
+      };
+
+      return e("div", { style: { animation: "slideUp 0.3s ease" } },
+        e("div", { style: { marginBottom: 24 } },
+          e("div", { style: { fontSize: 24, fontWeight: 700, marginBottom: 12 } }, `Welcome, ${user.name}! 👋`)
+        ),
+        // Phone Status Panel
+        e("div", { style: { background: DK.mid, border: `1px solid ${DK.border}`, borderRadius: 14, padding: 20, marginBottom: 24, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 } },
+          e("div", null,
+            e("div", { style: { fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase", marginBottom: 8 } }, "☎️ Active Calls"),
+            e("div", { style: { fontSize: 32, fontWeight: 700, color: AB.blue } }, activeCalls)
+          ),
+          e("div", null,
+            e("div", { style: { fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase", marginBottom: 8 } }, "📞 Missed Calls"),
+            e("div", { style: { fontSize: 32, fontWeight: 700, color: "#EF4444" } }, missedCalls)
+          ),
+          e("div", null,
+            e("div", { style: { fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase", marginBottom: 8 } }, "👥 Team Online"),
+            e("div", { style: { fontSize: 32, fontWeight: 700, color: "#22C55E" } }, Object.values(statuses).filter(s => s === "Available").length)
+          )
+        ),
+        e("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 } },
+          e("div", { style: { background: DK.mid, border: `1px solid ${DK.border}`, borderRadius: 14, padding: 20 } },
+            e("div", { style: { fontSize: 14, fontWeight: 600, marginBottom: 14 } }, "🎉 Give Kudos"),
+            e("div", { style: { marginBottom: 10 } },
+              e("label", { style: { fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase", display: "block", marginBottom: 6 } }, "To"),
+              e("select", { value: kudoTo, onChange: (evt) => setKudoTo(evt.target.value), style: { width: "100%", background: DK.inp, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 8, padding: "10px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" } },
+                e("option", { value: "" }, "Select teammate..."),
+                TEAM.filter(u => u.id !== user.id).map(u => e("option", { key: u.id, value: u.id }, u.name))
+              )
+            ),
+            e("div", { style: { marginBottom: 12 } },
+              e("label", { style: { fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase", display: "block", marginBottom: 6 } }, "Message"),
+              e("textarea", { value: kudoMsg, onChange: (evt) => setKudoMsg(evt.target.value), placeholder: "What did they do great?", rows: 3, style: { width: "100%", background: DK.inp, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 8, padding: "10px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical" } })
+            ),
+            e("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+              e("button", { onClick: sendKudo, style: { padding: "10px 18px", background: AB.blue, color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: 13 } }, "Send Kudo"),
+              kudoSent && e("span", { style: { fontSize: 12, color: "#22C55E" } }, kudoSent)
+            )
+          ),
+          e("div", { style: { background: DK.mid, border: `1px solid ${DK.border}`, borderRadius: 14, padding: 20 } },
+            e("div", { style: { fontSize: 14, fontWeight: 600, marginBottom: 12 } }, "👥 Team Status"),
+            // Location filter buttons
+            e("div", { style: { display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" } },
+              ["All", "Onsite", "Satellite Office"].map(loc => 
+                e("button", { 
+                  key: loc, 
+                  onClick: () => setLocationFilter(loc),
+                  style: { 
+                    padding: "6px 12px", 
+                    background: locationFilter === loc ? AB.blue : DK.card, 
+                    color: locationFilter === loc ? "#fff" : DK.text, 
+                    border: `1px solid ${locationFilter === loc ? AB.blue : DK.border}`, 
+                    borderRadius: 6, 
+                    cursor: "pointer", 
+                    fontSize: 11, 
+                    fontWeight: 600,
+                    transition: "all 0.2s"
+                  } 
+                }, loc)
+              )
+            ),
+            e("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+              TEAM.filter(u => locationFilter === "All" || teamLocations[u.id] === locationFilter).map(u => e("div", { key: u.id, style: { display: "flex", alignItems: "center", gap: 10, paddingBottom: 8, borderBottom: `1px solid ${DK.border}` } },
+                e("div", { style: { width: 8, height: 8, borderRadius: "50%", background: STATUS_COLORS[statuses[u.id]] || DK.muted } }),
+                e("span", { style: { flex: 1, fontSize: 12, fontWeight: 500 } }, u.name),
+                e("span", { style: { fontSize: 10, color: DK.muted, background: DK.card, padding: "2px 8px", borderRadius: 4 } }, teamLocations[u.id] || "Onsite"),
+                e("span", { style: { fontSize: 11, color: DK.muted, textTransform: "capitalize" } }, statuses[u.id] || "offline")
+              ))
+            )
+          )
+        ),
+        e("div", { style: { background: DK.mid, border: `1px solid ${DK.border}`, borderRadius: 14, padding: 20 } },
+          e("div", { style: { fontSize: 14, fontWeight: 600, marginBottom: 14 } }, "⭐ Recent Kudos"),
+          kudos.length === 0
+            ? e("div", { style: { textAlign: "center", padding: 20, color: DK.muted, fontSize: 13 } }, "No kudos yet. Start celebrating wins!")
+            : e("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
+                kudos.slice(0, 10).map((k, i) => e("div", { key: i, style: { padding: 12, background: DK.card, borderRadius: 8, borderLeft: `3px solid ${AB.yellow}` } },
+                  e("div", { style: { fontSize: 12, fontWeight: 600, marginBottom: 4 } }, `${k.to_name} ← ${k.from_name}`),
+                  e("div", { style: { fontSize: 12, color: DK.muted, lineHeight: 1.5 } }, k.message),
+                  e("div", { style: { fontSize: 10, color: DK.muted, marginTop: 6 } }, new Date(k.created_at).toLocaleDateString())
+                ))
+              )
+        )
+      );
+    }
+
+    // PTO Calendar Tab
+    function PTOCalendar({ user, TEAM }) {
+      const [ptoList, setPtoList] = useState([]);
+      const [ptoStart, setPtoStart] = useState("");
+      const [ptoEnd, setPtoEnd] = useState("");
+      const [ptoMsg, setPtoMsg] = useState("");
+      const [currentMonth, setCurrentMonth] = useState(new Date());
+
+      useEffect(() => {
+        sb.select("pto", "order=start_date.asc").then(data => setPtoList(data || []));
+      }, []);
+
+      const addPTO = async () => {
+        if (!ptoStart || !ptoEnd) return;
+        await sb.insert("pto", {
+          user_id: user.id,
+          user_name: user.name,
+          start_date: ptoStart,
+          end_date: ptoEnd,
+          message: ptoMsg.trim(),
+          created_at: new Date().toISOString()
+        });
+        setPtoStart("");
+        setPtoEnd("");
+        setPtoMsg("");
+        sb.select("pto", "order=start_date.asc").then(data => setPtoList(data || []));
+      };
+
+      const daysInMonth = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+      const firstDayOfMonth = (date) => new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+      const monthName = (date) => date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+      const days = [];
+      for (let i = 0; i < firstDayOfMonth(currentMonth); i++) days.push(null);
+      for (let i = 1; i <= daysInMonth(currentMonth); i++) days.push(i);
+
+      const isPTODay = (day) => {
+        if (!day) return null;
+        const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
+        const dateStr = date.toISOString().split("T")[0];
+        return ptoList.filter(p => {
+          const start = p.start_date.split("T")[0];
+          const end = p.end_date.split("T")[0];
+          return dateStr >= start && dateStr <= end;
+        });
+      };
+
+      return e("div", { style: { animation: "slideUp 0.3s ease" } },
+        e("div", { style: { marginBottom: 24 } },
+          e("div", { style: { fontSize: 24, fontWeight: 700, marginBottom: 12 } }, "📅 PTO Calendar")
+        ),
+        e("div", { style: { display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 } },
+          e("div", { style: { background: DK.mid, border: `1px solid ${DK.border}`, borderRadius: 14, padding: 20 } },
+            e("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 } },
+              e("button", { onClick: () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1)), style: { background: DK.card, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: 11 } }, "← Prev"),
+              e("div", { style: { fontSize: 14, fontWeight: 600 } }, monthName(currentMonth)),
+              e("button", { onClick: () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1)), style: { background: DK.card, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: 11 } }, "Next →")
+            ),
+            e("div", { style: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8 } },
+              ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => e("div", { key: d, style: { textAlign: "center", fontSize: 11, fontWeight: 600, color: DK.muted, padding: 8 } }, d)),
+              days.map((day, i) => {
+                const pto = day ? isPTODay(day) : [];
+                return e("div", { key: i, style: { aspectRatio: "1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: pto && pto.length > 0 ? AB.yellow + "20" : DK.card, border: `1px solid ${pto && pto.length > 0 ? AB.yellow : DK.border}`, borderRadius: 8, padding: 4, fontSize: 12, fontWeight: day ? 500 : 400, color: day ? DK.text : DK.muted, cursor: "pointer", position: "relative" } },
+                  day && e("div", null, day),
+                  pto && pto.length > 0 && e("div", { style: { fontSize: 8, color: AB.yellow, marginTop: 2 } }, `${pto.length} away`)
+                );
+              })
+            )
+          ),
+          e("div", { style: { background: DK.mid, border: `1px solid ${DK.border}`, borderRadius: 14, padding: 20 } },
+            e("div", { style: { fontSize: 14, fontWeight: 600, marginBottom: 14 } }, "📍 Add PTO"),
+            e("div", { style: { marginBottom: 10 } },
+              e("label", { style: { fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase", display: "block", marginBottom: 6 } }, "Start"),
+              e("input", { type: "date", value: ptoStart, onChange: (evt) => setPtoStart(evt.target.value), style: { width: "100%", background: DK.inp, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 8, padding: "10px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" } })
+            ),
+            e("div", { style: { marginBottom: 10 } },
+              e("label", { style: { fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase", display: "block", marginBottom: 6 } }, "End"),
+              e("input", { type: "date", value: ptoEnd, onChange: (evt) => setPtoEnd(evt.target.value), style: { width: "100%", background: DK.inp, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 8, padding: "10px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" } })
+            ),
+            e("div", { style: { marginBottom: 12 } },
+              e("label", { style: { fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase", display: "block", marginBottom: 6 } }, "Note (optional)"),
+              e("textarea", { value: ptoMsg, onChange: (evt) => setPtoMsg(evt.target.value), placeholder: "e.g. Vacation", rows: 2, style: { width: "100%", background: DK.inp, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 8, padding: "10px 12px", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical" } })
+            ),
+            e("button", { onClick: addPTO, style: { width: "100%", padding: 10, background: AB.blue, color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: 13 } }, "Add PTO")
+          )
+        ),
+        e("div", { style: { marginTop: 24, background: DK.mid, border: `1px solid ${DK.border}`, borderRadius: 14, padding: 20 } },
+          e("div", { style: { fontSize: 14, fontWeight: 600, marginBottom: 14 } }, "🏖️ Team PTO"),
+          ptoList.length === 0
+            ? e("div", { style: { textAlign: "center", padding: 20, color: DK.muted, fontSize: 13 } }, "No PTO scheduled")
+            : e("div", { style: { display: "flex", flexDirection: "column", gap: 10 } },
+                ptoList.map((p, i) => e("div", { key: i, style: { padding: 12, background: DK.card, borderRadius: 8, borderLeft: `3px solid ${AB.yellow}` } },
+                  e("div", { style: { fontSize: 12, fontWeight: 600, marginBottom: 4 } }, p.user_name),
+                  e("div", { style: { fontSize: 11, color: DK.muted } }, `${new Date(p.start_date).toLocaleDateString()} → ${new Date(p.end_date).toLocaleDateString()}`),
+                  p.message && e("div", { style: { fontSize: 11, color: DK.muted, marginTop: 6, fontStyle: "italic" } }, p.message)
+                ))
+              )
+        )
+      );
+    }
+
+    // Role-based permissions
+    const ROLE_PERMISSIONS = {
+      "Super Admin": ["dashboard", "pto", "settings", "kudos", "status", "admin"],
+      "Admin": ["dashboard", "pto", "settings", "kudos", "status"],
+      "Supervisor": ["dashboard", "pto", "kudos", "status"],
+      "Account Manager": ["dashboard", "pto", "kudos", "status"],
+      "Technician L1": ["dashboard", "pto", "kudos", "status"],
+      "Technician L2": ["dashboard", "pto", "kudos", "status"],
+      "Technician L3": ["dashboard", "pto", "kudos", "status"]
+    };
+
+    const FEATURE_DESCRIPTIONS = {
+      dashboard: "Main dashboard with team overview and welcome screen",
+      pto: "PTO calendar for scheduling time off",
+      settings: "Admin settings and team management",
+      kudos: "Give and receive kudos to team members",
+      status: "Status switcher (Available, Busy, AFK, etc.)",
+      admin: "Advanced admin panel"
+    };
+
+    // Settings Tab
+    function Settings({ user, TEAM }) {
+      const [roles, setRoles] = useState({});
+      const [locations, setLocations] = useState({});
+      const [saveMsg, setSaveMsg] = useState("");
+      const [loading, setLoading] = useState(true);
+      const [teamList, setTeamList] = useState(TEAM);
+      const [newUserName, setNewUserName] = useState("");
+      const [newUserEmail, setNewUserEmail] = useState("");
+      const [newUserRole, setNewUserRole] = useState("");
+      const [newUserLocation, setNewUserLocation] = useState("Onsite");
+      const [addMsg, setAddMsg] = useState("");
+      const [settingsTab, setSettingsTab] = useState("roles");
+      const [features, setFeatures] = useState({});
+      const [featureMsg, setFeatureMsg] = useState("");
+
+      const ROLE_OPTIONS = ["Super Admin", "Admin", "Supervisor", "Account Manager", "Technician L1", "Technician L2", "Technician L3"];
+      const LOCATION_OPTIONS = ["Onsite", "Satellite Office"];
+
+      useEffect(() => {
+        Promise.all([
+          sb.select("user_roles"),
+          sb.select("team_members"),
+          sb.select("feature_toggles"),
+          sb.select("team_locations")
+        ]).then(([roleData, teamData, featureData, locationData]) => {
+          const map = {};
+          roleData.forEach(d => map[d.user_id] = d.role);
+          
+          // Auto-assign Natali as Super Admin if no roles exist
+          if (Object.keys(map).length === 0) {
+            map["natali"] = "Super Admin";
+            sb.insert("user_roles", { user_id: "natali", role: "Super Admin" });
+          }
+          
+          setRoles(map);
+          
+          // Load team members from database if available
+          if (teamData && teamData.length > 0) {
+            setTeamList(teamData);
+          }
+
+          // Load team locations
+          const locationMap = {};
+          if (locationData && Array.isArray(locationData)) {
+            locationData.forEach(l => (locationMap[l.user_id] = l.location));
+          }
+          // Set defaults for missing locations
+          TEAM.forEach(t => {
+            if (!(t.id in locationMap)) locationMap[t.id] = "Onsite";
+          });
+          setLocations(locationMap);
+
+          // Load feature toggles
+          const featureMap = {};
+          if (featureData && Array.isArray(featureData)) {
+            featureData.forEach(f => (featureMap[f.feature_name] = f.enabled));
+          }
+          // Set defaults for missing features
+          Object.keys(FEATURE_DESCRIPTIONS).forEach(key => {
+            if (!(key in featureMap)) featureMap[key] = true;
+          });
+          setFeatures(featureMap);
+          
+          setLoading(false);
+        });
+      }, []);
+
+      const updateRole = async (userId, newRole) => {
+        setRoles(prev => ({ ...prev, [userId]: newRole }));
+        await sb.upsert("user_roles", { user_id: userId, role: newRole }, "user_id");
+        setSaveMsg("Role updated ✓");
+        setTimeout(() => setSaveMsg(""), 2000);
+      };
+
+      const updateLocation = async (userId, newLocation) => {
+        setLocations(prev => ({ ...prev, [userId]: newLocation }));
+        await sb.upsert("team_locations", { user_id: userId, location: newLocation }, "user_id");
+        setSaveMsg("Location updated ✓");
+        setTimeout(() => setSaveMsg(""), 2000);
+      };
+
+      // Auto-generate email from name (user can override)
+      useEffect(() => {
+        if (newUserName.trim()) {
+          const nameParts = newUserName.trim().toLowerCase().split(/\s+/);
+          const suggestedEmail = nameParts.join(".") + "@alwaysbeyond.com";
+          setNewUserEmail(suggestedEmail);
+        }
+      }, [newUserName]);
+
+      const addUser = async () => {
+        if (!newUserName.trim() || !newUserEmail.trim() || !newUserRole) {
+          setAddMsg("Please fill in all fields");
+          setTimeout(() => setAddMsg(""), 2000);
+          return;
+        }
+        
+        // Generate a simple user ID from name
+        const userId = newUserName.toLowerCase().replace(/\s+/g, "").substring(0, 15);
+        
+        // Add to team list
+        const newUser = { id: userId, name: newUserName.trim(), role: newUserRole, email: newUserEmail.trim(), location: newUserLocation };
+        setTeamList(prev => [...prev, newUser]);
+        
+        // Save user to database
+        await sb.insert("team_members", {
+          user_id: userId,
+          name: newUserName.trim(),
+          email: newUserEmail.trim(),
+          role: newUserRole,
+          location: newUserLocation,
+          created_at: new Date().toISOString()
+        });
+        
+        // Set their role
+        await sb.upsert("user_roles", { user_id: userId, role: newUserRole }, "user_id");
+        setRoles(prev => ({ ...prev, [userId]: newUserRole }));
+
+        // Set their location
+        await sb.upsert("team_locations", { user_id: userId, location: newUserLocation }, "user_id");
+        setLocations(prev => ({ ...prev, [userId]: newUserLocation }));
+        
+        setNewUserName("");
+        setNewUserEmail("");
+        setNewUserRole("");
+        setNewUserLocation("Onsite");
+        setAddMsg("✓ User added successfully!");
+        setTimeout(() => setAddMsg(""), 2000);
+      };
+
+      const [rolePermissions, setRolePermissions] = useState({ ...ROLE_PERMISSIONS });
+
+      useEffect(() => {
+        // Load permissions from database if available
+        const loadPermissions = async () => {
+          try {
+            const data = await sb.select("role_permissions");
+            if (data && data.length > 0) {
+              const perms = {};
+              data.forEach(p => {
+                if (!perms[p.role]) perms[p.role] = [];
+                perms[p.role].push(p.feature);
+              });
+              setRolePermissions(perms);
+            }
+          } catch (err) {
+            console.error("Error loading permissions:", err);
+          }
+        };
+        loadPermissions();
+      }, []);
+
+      const toggleRoleFeature = async (role, feature) => {
+        const currentPerms = rolePermissions[role] || [];
+        let newPerms;
+        
+        if (currentPerms.includes(feature)) {
+          newPerms = currentPerms.filter(f => f !== feature);
+        } else {
+          newPerms = [...currentPerms, feature];
+        }
+        
+        setRolePermissions(prev => ({ ...prev, [role]: newPerms }));
+        
+        // Save to database
+        await sb.insert("role_permissions", { 
+          role: role,
+          feature: feature,
+          granted: newPerms.includes(feature)
+        });
+        
+        setFeatureMsg(`✓ ${role} permissions updated`);
+        setTimeout(() => setFeatureMsg(""), 2000);
+      };
+
+      // Only super admin or admin can access (or Natali by default)
+      const userRole = roles[user.id] || (user.id === "natali" ? "Super Admin" : null);
+      if (!["Super Admin", "Admin"].includes(userRole)) {
+        return e("div", { style: { textAlign: "center", padding: 40, background: DK.mid, borderRadius: 14, border: `1px solid ${DK.border}` } },
+          e("div", { style: { fontSize: 16, fontWeight: 600, marginBottom: 8 } }, "🔒 Access Denied"),
+          e("div", { style: { fontSize: 13, color: DK.muted } }, "Only Super Admin or Admin can access Settings")
+        );
+      }
+
+      if (loading) {
+        return e("div", { style: { textAlign: "center", padding: 40, color: DK.muted } }, "Loading...");
+      }
+
+      return e("div", { style: { animation: "slideUp 0.3s ease" } },
+        e("div", { style: { marginBottom: 24 } },
+          e("div", { style: { fontSize: 24, fontWeight: 700, marginBottom: 12 } }, "⚙️ Settings")
+        ),
+        // Tab buttons
+        e("div", { style: { display: "flex", gap: 8, marginBottom: 20, borderBottom: `2px solid ${DK.border}` } },
+          e("button", { 
+            onClick: () => setSettingsTab("roles"), 
+            style: { 
+              padding: "12px 16px", 
+              background: "none", 
+              border: "none", 
+              borderBottom: settingsTab === "roles" ? `3px solid ${AB.blue}` : "none", 
+              color: settingsTab === "roles" ? AB.blue : DK.muted, 
+              cursor: "pointer", 
+              fontWeight: 600, 
+              fontSize: 13,
+              transition: "all 0.2s"
+            } 
+          }, "👥 Team Roles"),
+          e("button", { 
+            onClick: () => setSettingsTab("features"), 
+            style: { 
+              padding: "12px 16px", 
+              background: "none", 
+              border: "none", 
+              borderBottom: settingsTab === "features" ? `3px solid ${AB.blue}` : "none", 
+              color: settingsTab === "features" ? AB.blue : DK.muted, 
+              cursor: "pointer", 
+              fontWeight: 600, 
+              fontSize: 13,
+              transition: "all 0.2s"
+            } 
+          }, "🎛️ Feature Toggles")
+        ),
+        
+        // TEAM ROLES TAB
+        settingsTab === "roles" && e("div", { style: { animation: "slideUp 0.2s ease" } },
+          e("div", { style: { background: DK.mid, border: `1px solid ${DK.border}`, borderRadius: 14, padding: 20, marginBottom: 20 } },
+            e("div", { style: { fontSize: 14, fontWeight: 600, marginBottom: 16 } }, "➕ Add Team Member"),
+            e("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 } },
+              e("div", null,
+                e("label", { style: { fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase", display: "block", marginBottom: 6 } }, "Name"),
+                e("input", { type: "text", value: newUserName, onChange: (evt) => setNewUserName(evt.target.value), placeholder: "Full name", style: { width: "100%", background: DK.inp, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 6, padding: "10px 12px", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" } })
+              ),
+              e("div", null,
+                e("label", { style: { fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase", display: "block", marginBottom: 6 } }, "Email"),
+                e("input", { type: "email", value: newUserEmail, onChange: (evt) => setNewUserEmail(evt.target.value), placeholder: "user@alwaysbeyond.com", style: { width: "100%", background: DK.inp, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 6, padding: "10px 12px", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" } })
+              )
+            ),
+            e("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 } },
+              e("div", null,
+                e("label", { style: { fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase", display: "block", marginBottom: 6 } }, "Role"),
+                e("select", { value: newUserRole, onChange: (evt) => setNewUserRole(evt.target.value), style: { width: "100%", background: DK.inp, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 6, padding: "10px 12px", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer", boxSizing: "border-box" } },
+                  e("option", { value: "" }, "Select role..."),
+                  ROLE_OPTIONS.map(r => e("option", { key: r, value: r }, r))
+                )
+              ),
+              e("div", null,
+                e("label", { style: { fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase", display: "block", marginBottom: 6 } }, "Location"),
+                e("select", { value: newUserLocation, onChange: (evt) => setNewUserLocation(evt.target.value), style: { width: "100%", background: DK.inp, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 6, padding: "10px 12px", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer", boxSizing: "border-box" } },
+                  LOCATION_OPTIONS.map(l => e("option", { key: l, value: l }, l))
+                )
+              )
+            ),
+            e("div", { style: { display: "flex", alignItems: "center", gap: 10 } },
+              e("button", { onClick: addUser, style: { padding: "10px 18px", background: AB.blue, color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 600, fontSize: 12 } }, "Add User"),
+              addMsg && e("span", { style: { fontSize: 12, color: addMsg.includes("successfully") ? "#22C55E" : "#EF4444" } }, addMsg)
+            )
+          ),
+          e("div", { style: { background: DK.mid, border: `1px solid ${DK.border}`, borderRadius: 14, padding: 20 } },
+            e("div", { style: { fontSize: 14, fontWeight: 600, marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" } },
+              "👥 Team Roles",
+              saveMsg && e("span", { style: { fontSize: 12, color: "#22C55E" } }, saveMsg)
+            ),
+            e("div", { style: { overflow: "auto" } },
+              e("table", { style: { width: "100%", borderCollapse: "collapse" } },
+                e("thead", null,
+                  e("tr", { style: { borderBottom: `2px solid ${DK.border}` } },
+                    e("th", { style: { textAlign: "left", padding: "12px 14px", fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase" } }, "Name"),
+                    e("th", { style: { textAlign: "left", padding: "12px 14px", fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase" } }, "Role"),
+                    e("th", { style: { textAlign: "left", padding: "12px 14px", fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase" } }, "Location"),
+                    e("th", { style: { textAlign: "left", padding: "12px 14px", fontSize: 11, fontWeight: 600, color: DK.muted, textTransform: "uppercase" } }, "Current Status")
+                  )
+                ),
+                e("tbody", null,
+                  teamList.map((u, i) => e("tr", { key: u.id, style: { borderBottom: i < teamList.length - 1 ? `1px solid ${DK.border}` : "none" } },
+                    e("td", { style: { padding: "12px 14px", fontSize: 12, fontWeight: 500 } }, u.name),
+                    e("td", { style: { padding: "12px 14px" } },
+                      e("select", { value: roles[u.id] || "", onChange: (evt) => updateRole(u.id, evt.target.value), style: { background: DK.inp, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 6, padding: "8px 10px", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer" } },
+                        e("option", { value: "" }, "Select role..."),
+                        ROLE_OPTIONS.map(r => e("option", { key: r, value: r }, r))
+                      )
+                    ),
+                    e("td", { style: { padding: "12px 14px" } },
+                      e("select", { value: locations[u.id] || "Onsite", onChange: (evt) => updateLocation(u.id, evt.target.value), style: { background: DK.inp, border: `1px solid ${DK.border}`, color: DK.text, borderRadius: 6, padding: "8px 10px", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer" } },
+                        LOCATION_OPTIONS.map(l => e("option", { key: l, value: l }, l))
+                      )
+                    ),
+                    e("td", { style: { padding: "12px 14px", fontSize: 12, color: DK.muted, fontStyle: "italic" } }, (roles[u.id] || "Not assigned") + " — " + (locations[u.id] || "Onsite"))
+                  ))
+                )
+              )
+            )
+          )
+        ),
+
+        // FEATURE PERMISSIONS TAB (editable)
+        settingsTab === "features" && e("div", { style: { animation: "slideUp 0.2s ease" } },
+          e("div", { style: { background: DK.mid, border: `1px solid ${DK.border}`, borderRadius: 14, padding: 20, marginBottom: 20 } },
+            e("div", { style: { fontSize: 14, fontWeight: 600, marginBottom: 6 } }, "🎛️ Role Permissions Manager"),
+            e("div", { style: { fontSize: 11, color: DK.muted, marginBottom: 16 } }, "Modify which roles have access to each feature. Click checkboxes to grant or revoke access."),
+            featureMsg && e("div", { style: { padding: 12, background: "#DBEAFE", border: `1px solid ${AB.blue}`, borderRadius: 8, marginBottom: 16, fontSize: 12, color: AB.blue, fontWeight: 500 } }, featureMsg),
+            
+            // Interactive permission matrix
+            e("div", { style: { overflowX: "auto", marginBottom: 20 } },
+              e("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 12 } },
+                e("thead", null,
+                  e("tr", { style: { borderBottom: `2px solid ${DK.border}`, background: DK.card } },
+                    e("th", { style: { textAlign: "left", padding: "14px 12px", fontWeight: 600, color: DK.text, minWidth: 140 } }, "Feature"),
+                    ROLE_OPTIONS.map(role => 
+                      e("th", { key: role, style: { textAlign: "center", padding: "14px 8px", fontWeight: 600, color: DK.text, fontSize: 11, minWidth: 80, whiteSpace: "nowrap" } }, role.split(" ")[0])
+                    )
+                  )
+                ),
+                e("tbody", null,
+                  Object.entries(FEATURE_DESCRIPTIONS).map(([ feature, desc ], idx) =>
+                    e("tr", { key: feature, style: { borderBottom: `1px solid ${DK.border}`, background: idx % 2 === 0 ? DK.bg : "#fff" } },
+                      e("td", { style: { padding: "14px 12px", fontWeight: 500, color: DK.text } },
+                        e("div", { style: { marginBottom: 4 } }, feature.toUpperCase()),
+                        e("div", { style: { fontSize: 10, color: DK.muted, fontWeight: 400 } }, desc)
+                      ),
+                      ROLE_OPTIONS.map(role => {
+                        const hasAccess = (rolePermissions[role] || []).includes(feature);
+                        return e("td", { key: role, style: { textAlign: "center", padding: "14px 8px" } },
+                          e("div", {
+                            onClick: () => toggleRoleFeature(role, feature),
+                            style: {
+                              width: 32,
+                              height: 32,
+                              borderRadius: 6,
+                              border: `2px solid ${hasAccess ? AB.blue : DK.border}`,
+                              background: hasAccess ? `${AB.blue}15` : "#fff",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              transition: "all 0.2s",
+                              margin: "0 auto"
+                            }
+                          },
+                            hasAccess && e("div", { style: { fontSize: 14, color: AB.blue, fontWeight: 700 } }, "✓")
+                          )
+                        );
+                      })
+                    )
+                  )
+                )
+              )
+            ),
+
+            // Legend
+            e("div", { style: { padding: 12, background: DK.card, borderRadius: 8, border: `1px solid ${DK.border}` } },
+              e("div", { style: { fontSize: 11, fontWeight: 600, marginBottom: 8, color: DK.muted } }, "💡 How to use:"),
+              e("div", { style: { fontSize: 11, color: DK.text, lineHeight: 1.6 } },
+                "Click any checkbox to toggle that role's access to a feature. Blue checkboxes = access granted. Empty boxes = access denied. Changes save automatically."
+              )
+            )
+          ),
+
+          // Summary by role
+          e("div", { style: { background: DK.mid, border: `1px solid ${DK.border}`, borderRadius: 14, padding: 20 } },
+            e("div", { style: { fontSize: 14, fontWeight: 600, marginBottom: 14 } }, "📊 Access Summary by Role"),
+            e("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 } },
+              ROLE_OPTIONS.map(role => {
+                const numFeatures = (rolePermissions[role] || []).length;
+                const pctAccess = Math.round((numFeatures / Object.keys(FEATURE_DESCRIPTIONS).length) * 100);
+                return e("div", { key: role, style: { padding: 14, background: DK.card, borderRadius: 10, border: `1px solid ${DK.border}` } },
+                  e("div", { style: { fontSize: 12, fontWeight: 600, marginBottom: 8, color: DK.text } }, role),
+                  e("div", { style: { fontSize: 11, color: DK.muted, marginBottom: 10 } }, `${numFeatures} of ${Object.keys(FEATURE_DESCRIPTIONS).length} features`),
+                  e("div", { style: { background: DK.border, height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 8 } },
+                    e("div", { style: { background: AB.blue, height: "100%", width: `${pctAccess}%`, transition: "width 0.3s" } })
+                  ),
+                  e("div", { style: { fontSize: 11, fontWeight: 600, color: AB.blue } }, `${pctAccess}% access`)
+                );
+              })
+            )
+          )
+        )
+      );
+    }
+
+    // Render
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(e(App));
+  </script>
+</body>
+</html>
